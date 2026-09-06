@@ -1,4 +1,3 @@
-# Dockerfile (en la raíz del proyecto)
 FROM python:3.13-slim
 
 WORKDIR /app
@@ -9,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar shared primero (dependencia común)
+# Copiar todo el proyecto
 COPY shared/ /app/shared/
 COPY services/ /app/services/
 COPY backtesting/ /app/backtesting/
@@ -20,6 +19,9 @@ RUN pip install --no-cache-dir -r /app/services/data-collector/requirements.txt 
     && pip install --no-cache-dir -r /app/services/execution-engine/requirements.txt \
     && pip install --no-cache-dir -r /app/services/risk-manager/requirements.txt \
     && pip install --no-cache-dir -r /app/services/monitoring/requirements.txt
+
+# 🔧 IMPORTANTE: Agregar /app al PYTHONPATH
+ENV PYTHONPATH=/app
 
 # Variable para elegir qué servicio ejecutar
 ENV SERVICE_NAME=data-collector
