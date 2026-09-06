@@ -1,0 +1,307 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "⚡ ESTADO GENERAL Y RENDIMIENTO",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0 }
+            ]
+          },
+          "unit": "currencyUSD"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+          "format": "table",
+          "rawSql": "SELECT COALESCE(SUM(pnl), 0) AS \"PnL Total\" FROM orders WHERE status = 'closed';",
+          "refId": "A"
+        }
+      ],
+      "title": "💰 PnL Total Realizado",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 45 },
+              { "color": "green", "value": 55 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+          "format": "table",
+          "rawSql": "SELECT COALESCE(ROUND(AVG(CASE WHEN pnl > 0 THEN 100.0 ELSE 0.0 END)::numeric, 1), 0) AS \"Win Rate\" FROM orders WHERE status = 'closed';",
+          "refId": "A"
+        }
+      ],
+      "title": "🎯 Win Rate (%)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": []
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Trades Ejecutados\" FROM orders;",
+          "refId": "A"
+        }
+      ],
+      "title": "📊 Total Operaciones",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "orange", "value": 3 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Posiciones Abiertas\" FROM orders WHERE status IN ('open', 'filled', 'pending');",
+          "refId": "A"
+        }
+      ],
+      "title": "🛡️ Posiciones Abiertas",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "📈 PRECIO EN VIVO Y VELAS OHLC",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["last", "max", "min"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+          "format": "time_series",
+          "rawSql": "SELECT timestamp AS \"time\", close AS \"EUR/USD\", open, high, low FROM candles WHERE pair = 'EUR_USD' AND $__timeFilter(timestamp) ORDER BY timestamp ASC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Cotizaciones Forex en Tiempo Real (EUR/USD)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "title": "📋 HISTORIAL DE ÓRDENES Y SEÑALES",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "text", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "id": 6,
+      "options": {
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+          "format": "table",
+          "rawSql": "SELECT id AS \"ID\", pair AS \"Par\", direction AS \"Dir\", units AS \"Unidades\", entry_price AS \"Entrada\", stop_loss AS \"SL\", take_profit AS \"TP\", status AS \"Estado\", pnl AS \"PnL ($)\", opened_at AS \"Fecha Apertura\" FROM orders ORDER BY opened_at DESC LIMIT 20;",
+          "refId": "A"
+        }
+      ],
+      "title": "Últimas Órdenes Ejecutadas",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "text", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "id": 7,
+      "options": {
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+          "format": "table",
+          "rawSql": "SELECT id AS \"ID\", pair AS \"Par\", strategy_name AS \"Estrategia\", direction AS \"Dirección\", confidence AS \"Confianza\", timestamp AS \"Hora Señal\" FROM signals ORDER BY timestamp DESC LIMIT 20;",
+          "refId": "A"
+        }
+      ],
+      "title": "Últimas Señales de Estrategias",
+      "type": "table"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["forex", "trading", "timescaledb", "algo"],
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+  "timezone": "browser",
+  "title": "Forex Algorithmic Trading Overview",
+  "uid": "forex-trading-overview",
+  "version": 1
+}

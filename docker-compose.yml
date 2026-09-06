@@ -1,0 +1,141 @@
+services:
+  # --- BASE DE DATOS DE SERIES TEMPORALES ---
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: forex_timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-forex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-forex_pw}
+      POSTGRES_DB: ${POSTGRES_DB:-forex_data}
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forex} -d ${POSTGRES_DB:-forex_data}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- MESSAGE BROKER Y PUB/SUB ---
+  redis:
+    image: redis:7-alpine
+    container_name: forex_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # --- SERVICIO: INGESTA DE DATOS DE MERCADO (OANDA) ---
+  data-collector:
+    build:
+      context: .
+      dockerfile: services/data-collector/Dockerfile
+    container_name: forex_data_collector
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./shared:/app/shared:ro
+
+  # --- SERVICIO: MOTOR DE ESTRATEGIAS CUANTITATIVAS ---
+  strategy-engine:
+    build:
+      context: .
+      dockerfile: services/strategy-engine/Dockerfile
+    container_name: forex_strategy_engine
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./shared:/app/shared:ro
+
+  # --- SERVICIO: GESTOR Y CORTACIRCUITOS DE RIESGO ---
+  risk-manager:
+    build:
+      context: .
+      dockerfile: services/risk-manager/Dockerfile
+    container_name: forex_risk_manager
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./shared:/app/shared:ro
+
+  # --- SERVICIO: MOTOR DE EJECUCIÓN Y RECONCILIACIÓN ---
+  execution-engine:
+    build:
+      context: .
+      dockerfile: services/execution-engine/Dockerfile
+    container_name: forex_execution_engine
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./shared:/app/shared:ro
+
+  # --- SERVICIO: MONITOREO Y ALERTAS TELEGRAM ---
+  monitoring:
+    build:
+      context: .
+      dockerfile: services/monitoring/Dockerfile
+    container_name: forex_monitoring
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./shared:/app/shared:ro
+
+  # --- OBSERVABILIDAD Y DASHBOARDS EN VIVO ---
+  grafana:
+    image: grafana/grafana:latest
+    container_name: forex_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+volumes:
+  timescale_data:
+  grafana_data:
