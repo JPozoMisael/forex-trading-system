@@ -63,6 +63,8 @@ class Settings:
     channel_orders_closed: str = "orders:closed"          # Orden/posición cerrada
     channel_risk_alerts: str = "risk:alerts"              # Alerta de violación de riesgo
 
+    
+
     # General
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     environment: str = os.getenv("ENVIRONMENT", "development")
@@ -76,3 +78,15 @@ class Settings:
 
 
 settings = Settings()
+# shared/config.py - Agregar al final de la clase Settings
+
+# ========== NUEVA SECCIÓN: MT5 ==========
+# MT5 Configuration
+mt5_login: int = int(os.getenv("MT5_LOGIN", "0"))
+mt5_password: str = os.getenv("MT5_PASSWORD", "")
+mt5_server: str = os.getenv("MT5_SERVER", "MetaQuotes-Demo")
+mt5_timeout: int = int(os.getenv("MT5_TIMEOUT", "60000"))
+
+# Trading
+default_volume: float = float(os.getenv("DEFAULT_VOLUME", "0.01"))
+slippage: int = int(os.getenv("SLIPPAGE", "10"))

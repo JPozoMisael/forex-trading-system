@@ -6,13 +6,18 @@ las guarda en TimescaleDB y emite un evento en Redis Pub/Sub por cada par actual
 import signal
 import sys
 import time
+import os
 
-from oanda_client import OandaClient
-from db_writer import DBWriter
+# Agregar la raíz del proyecto al PYTHONPATH
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+# ========== IMPORTAR DESDE SHARED ==========
+from shared.mt5_client import MT5Client
 from shared.config import settings
 from shared.logger import get_logger
 from shared.bus import EventBus
+
+from db_writer import DBWriter
 
 log = get_logger(__name__)
 
@@ -33,7 +38,12 @@ def main():
         f"Iniciando data-collector | Pares: {settings.forex_pairs} | Granularidad: {settings.candle_granularity} | Intervalo: {settings.collector_poll_seconds}s"
     )
 
-    client = OandaClient()
+    # ========== USAR MT5Client ==========
+    client = MT5Client()
+    if not client.connect():
+        log.error("No se pudo conectar a MT5. Saliendo...")
+        return
+    
     db = DBWriter()
     bus = EventBus()
 
@@ -72,6 +82,7 @@ def main():
                 break
             time.sleep(1)
 
+    client.disconnect()
     db.close()
     bus.close()
     log.info("Servicio data-collector finalizado correctamente.")
