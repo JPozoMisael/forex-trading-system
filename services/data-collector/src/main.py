@@ -29,17 +29,13 @@ def main():
         f"Iniciando data-collector | Pares: {settings.forex_pairs} | Granularidad: {settings.candle_granularity} | Intervalo: {settings.collector_poll_seconds}s"
     )
 
-    # ========== INTENTAR USAR MT5 ==========
+    # ========== USAR OANDA EN PRODUCCIÓN ==========
     try:
-        from shared.mt5_client import MT5Client
-        client = MT5Client()
-        if client.connect():
-            log.info("✅ Usando MT5 como fuente de datos")
-        else:
-            log.error("No se pudo conectar a MT5. Saliendo...")
-            return
+        from oanda_client import OandaClient
+        client = OandaClient()
+        log.info("✅ Usando OANDA como fuente de datos")
     except Exception as e:
-        log.error(f"Error cargando MT5: {e}")
+        log.error(f"Error cargando OANDA: {e}")
         return
 
     db = DBWriter()
@@ -78,7 +74,6 @@ def main():
                 break
             time.sleep(1)
 
-    client.disconnect()
     db.close()
     bus.close()
     log.info("Servicio data-collector finalizado correctamente.")
