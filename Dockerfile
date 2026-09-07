@@ -1,3 +1,4 @@
+# Dockerfile (RAÍZ del proyecto)
 FROM python:3.13-slim
 
 WORKDIR /app
@@ -20,7 +21,7 @@ RUN pip install --no-cache-dir -r /app/services/data-collector/requirements.txt 
     && pip install --no-cache-dir -r /app/services/risk-manager/requirements.txt \
     && pip install --no-cache-dir -r /app/services/monitoring/requirements.txt
 
-# 🔧 IMPORTANTE: Agregar /app al PYTHONPATH
+# Agregar /app al PYTHONPATH
 ENV PYTHONPATH=/app
 
 # Variable para elegir qué servicio ejecutar

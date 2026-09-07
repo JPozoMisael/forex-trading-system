@@ -1,19 +1,31 @@
-FROM python:3.12-slim
+# services/data-collector/Dockerfile
+FROM python:3.13-slim
 
 WORKDIR /app
 
-# Dependencias del sistema mínimas (psycopg2 las necesita)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Instalar dependencias del sistema
+RUN apt-get update && apt-get install -y \
     gcc \
-    libpq-dev \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-COPY services/data-collector/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY services/data-collector/src/ ./src/
+# Copiar shared primero (dependencia común)
 COPY shared/ /app/shared/
 
+# Copiar solo el data-collector
+COPY services/data-collector/ /app/services/data-collector/
+
+# Copiar backtesting (si es necesario)
+COPY backtesting/ /app/backtesting/
+
+# Instalar dependencias
+RUN pip install --no-cache-dir -r /app/services/data-collector/requirements.txt
+
+# Agregar /app al PYTHONPATH
 ENV PYTHONPATH=/app
 
-CMD ["python", "-u", "src/main.py"]
+# Puerto (opcional)
+EXPOSE 8000
+
+# Comando para ejecutar el data-collector
+CMD ["python", "/app/services/data-collector/src/main.py"]
