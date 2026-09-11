@@ -13,6 +13,7 @@ from shared.logger import get_logger
 from shared.bus import EventBus
 
 from telegram_alerts import TelegramNotifier
+from email_alerts import EmailNotifier
 from health_check import HealthChecker
 
 log = get_logger(__name__)
@@ -52,6 +53,7 @@ def main():
 
     bus = EventBus()
     notifier = TelegramNotifier()
+    email_notifier = EmailNotifier()
     checker = HealthChecker()
 
     # Iniciar hilo de salud
@@ -72,17 +74,26 @@ def main():
             if not running:
                 break
 
-            try:
-                if channel == settings.channel_signals_new:
-                    notifier.send_signal_alert(data)
-                elif channel == settings.channel_orders_executed:
-                    notifier.send_order_executed_alert(data)
-                elif channel == settings.channel_orders_closed:
-                    notifier.send_trade_closed_alert(data)
-                elif channel == settings.channel_risk_alerts:
-                    notifier.send_risk_alert(data)
-            except Exception as ev_err:
-                log.error(f"Error despachando alerta para canal '{channel}': {ev_err}")
+            if channel == settings.channel_signals_new:
+                method = "send_signal_alert"
+            elif channel == settings.channel_orders_executed:
+                method = "send_order_executed_alert"
+            elif channel == settings.channel_orders_closed:
+                method = "send_trade_closed_alert"
+            elif channel == settings.channel_risk_alerts:
+                method = "send_risk_alert"
+            else:
+                continue
+
+            # Cada canal de notificación se despacha en su propio try/except:
+            # un fallo en Telegram (p.ej. `confidence` nulo rompiendo el formateo
+            # del mensaje) no debe impedir que el Email para el mismo evento salga,
+            # y viceversa.
+            for label, target in (("Telegram", notifier), ("Email", email_notifier)):
+                try:
+                    getattr(target, method)(data)
+                except Exception as ev_err:
+                    log.error(f"Error despachando alerta {label} para canal '{channel}': {ev_err}")
 
     except KeyboardInterrupt:
         log.info("Deteniendo monitoring...")

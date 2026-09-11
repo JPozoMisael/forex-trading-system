@@ -63,7 +63,7 @@ class TelegramNotifier:
         price = sig.get("entry_price", "N/A")
         sl = sig.get("stop_loss", "N/A")
         tp = sig.get("take_profit", "N/A")
-        conf = sig.get("confidence", 1.0) * 100
+        conf = (sig.get("confidence") if sig.get("confidence") is not None else 1.0) * 100
 
         emoji_dir = "🟢 COMPRA (BUY)" if "BUY" in direction else "🔴 VENTA (SELL)"
 

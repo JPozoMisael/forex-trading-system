@@ -1,0 +1,6 @@
+# Dependencia adicional SOLO para pruebas locales en Windows con MARKET_DATA_PROVIDER=mt5.
+# NO se agrega a requirements.txt porque MetaTrader5 no tiene wheel para Linux y
+# rompería el build de Docker/Dokploy. Instálala manualmente en tu entorno local:
+#   pip install -r services/data-collector/requirements.txt
+#   pip install -r services/data-collector/requirements-local-mt5.txt
+MetaTrader5

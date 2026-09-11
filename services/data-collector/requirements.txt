@@ -1,5 +1,4 @@
-# services/data-collector/requirements.txt (SIN MetaTrader5)
-oandapyV20==0.7.2
+oandapyV20==0.7.2  # ← DESCOMENTADO (debe estar activo)
 psycopg2-binary>=2.9.10
 pydantic==2.9.2
 python-dotenv==1.0.1

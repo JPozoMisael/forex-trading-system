@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from shared.config import settings
 from shared.logger import get_logger
 from shared.bus import EventBus
+from shared.market_client import MarketDataClient
 from db_writer import DBWriter
 
 log = get_logger(__name__)
@@ -21,23 +22,52 @@ def _handle_shutdown(signum, frame):
     log.info("Señal de parada recibida. Deteniendo data-collector...")
     running = False
 
+
+def build_market_client() -> MarketDataClient:
+    """
+    Instancia el cliente de datos de mercado según MARKET_DATA_PROVIDER.
+    Permite cambiar de broker con una sola variable de entorno, sin tocar
+    el resto del pipeline (db_writer, EventBus, estrategias).
+    """
+    provider = settings.market_data_provider
+
+    if provider == "mt5":
+        # Solo funciona corriendo nativo en Windows con el terminal MT5 abierto.
+        from shared.mt5_client import MT5Client
+        client = MT5Client()
+        log.info(f"✅ Usando MT5 como fuente de datos (servidor: {settings.mt5_server})")
+
+    elif provider == "oanda":
+        # Único proveedor apto para el despliegue en Dokploy/Linux (API REST,
+        # no requiere terminal de escritorio). Ver .env.production.example.
+        from oanda_client import OandaClient
+        client = OandaClient()
+        log.info("✅ Usando OANDA como fuente de datos")
+
+    else:
+        raise ValueError(
+            f"MARKET_DATA_PROVIDER='{provider}' no soportado. Usa 'mt5' (pruebas locales en Windows) "
+            f"u 'oanda' (despliegue Dokploy/Linux), o agrega la rama correspondiente en build_market_client()."
+        )
+
+    if not client.connect():
+        raise RuntimeError(
+            f"No se pudo conectar al proveedor '{provider}'. Revisa las credenciales en .env "
+            f"antes de continuar; el servicio no puede recolectar datos sin conexión."
+        )
+    return client
+
+
 def main():
     signal.signal(signal.SIGINT, _handle_shutdown)
     signal.signal(signal.SIGTERM, _handle_shutdown)
 
     log.info(
-        f"Iniciando data-collector | Pares: {settings.forex_pairs} | Granularidad: {settings.candle_granularity} | Intervalo: {settings.collector_poll_seconds}s"
+        f"Iniciando data-collector | Proveedor: {settings.market_data_provider} | Pares: {settings.forex_pairs} | "
+        f"Granularidad: {settings.candle_granularity} | Intervalo: {settings.collector_poll_seconds}s"
     )
 
-    # ========== USAR OANDA EN PRODUCCIÓN ==========
-    try:
-        from oanda_client import OandaClient
-        client = OandaClient()
-        log.info("✅ Usando OANDA como fuente de datos")
-    except Exception as e:
-        log.error(f"Error cargando OANDA: {e}")
-        return
-
+    client = build_market_client()
     db = DBWriter()
     bus = EventBus()
 

@@ -1,29 +1,47 @@
 # shared/mt5_client.py
 """
 Cliente para interactuar con MetaTrader 5.
-Reemplaza a OandaClient para usar MT5 como fuente de datos y ejecución de órdenes.
+Alternativa a OandaClient para usar MT5 como fuente de datos (solo pruebas locales).
+
+IMPORTANTE: el paquete `MetaTrader5` solo funciona en Windows con el terminal
+MT5 instalado y abierto en la misma máquina. No es apto para el despliegue en
+Docker/Linux (Dokploy) de este proyecto: úsalo únicamente para correr el
+data-collector de forma nativa en tu equipo mientras pruebas con la cuenta
+demo, antes de decidirte por un broker con API REST para producción.
 """
-import MetaTrader5 as mt5
-import pandas as pd
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+
+try:
+    import MetaTrader5 as mt5
+except ImportError:
+    mt5 = None
 
 from shared.config import settings
 from shared.logger import get_logger
 from shared.models import Candle
+from shared.market_client import MarketDataClient
 
 log = get_logger(__name__)
 
 
-class MT5Client:
+class MT5Client(MarketDataClient):
     """Cliente para interactuar con MetaTrader 5"""
-    
+
     def __init__(self):
         self.connected = False
         self.account_info = None
-        
+
     def connect(self) -> bool:
         """Conectar a MT5"""
+        if mt5 is None:
+            log.error(
+                "El paquete 'MetaTrader5' no está instalado o no es compatible con este sistema "
+                "operativo (solo funciona en Windows). Instálalo con 'pip install MetaTrader5' "
+                "en tu entorno local de pruebas."
+            )
+            return False
+
         if not mt5.initialize():
             log.error(f"Error inicializando MT5: {mt5.last_error()}")
             return False

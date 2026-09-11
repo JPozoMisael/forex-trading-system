@@ -18,6 +18,16 @@ def get_logger(name: str) -> logging.Logger:
 
     logger.setLevel(settings.log_level)
 
+    # En Windows, la consola suele usar cp1252 y truena con los emojis de los
+    # logs (✅, 💰, 📈...). Forzamos UTF-8 en la salida estándar cuando el
+    # intérprete lo permite (Python 3.7+); en Docker/Linux ya es UTF-8 por
+    # defecto y esto no tiene efecto.
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter(
         fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",

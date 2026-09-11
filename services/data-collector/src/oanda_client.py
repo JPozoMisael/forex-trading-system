@@ -2,7 +2,7 @@
 Wrapper sobre oandapyV20 para obtener velas OHLC y datos de precios de OANDA.
 """
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 import math
 import random
 
@@ -14,11 +14,23 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from shared.config import settings
 from shared.logger import get_logger
 from shared.models import Candle
+from shared.market_client import MarketDataClient
 
 log = get_logger(__name__)
 
+# Precios base usados para generar datos simulados (modo Dry-Run sin API key real).
+# Única fuente para _generate_simulated_price y _generate_simulated_candles: evita
+# que ambos generadores queden desincronizados si se agrega o cambia un par.
+_SIMULATED_BASE_PRICES = {
+    "EUR_USD": 1.0850,
+    "USD_JPY": 155.20,
+    "GBP_USD": 1.2950,
+    "AUD_USD": 0.6550,
+    "USD_CHF": 0.8950,
+}
 
-class OandaClient:
+
+class OandaClient(MarketDataClient):
     def __init__(self, api_key: Optional[str] = None, environment: Optional[str] = None):
         self.api_key = api_key or settings.oanda_api_key
         self.environment = environment or settings.oanda_environment
@@ -39,6 +51,42 @@ class OandaClient:
     @property
     def is_live_connected(self) -> bool:
         return self._api is not None
+
+    def connect(self) -> bool:
+        """OANDA se autentica en el constructor; este método solo confirma el estado."""
+        if not self.is_live_connected:
+            log.info("OANDA operando en modo Simulación/Dry-Run (sin API key real).")
+        return True
+
+    def get_price(self, pair: str) -> Optional[Dict[str, Any]]:
+        """Obtiene el precio bid/ask actual de un par vía la API de pricing de OANDA."""
+        if not self._api:
+            return self._generate_simulated_price(pair)
+
+        try:
+            request = PricingInfo(accountID=settings.oanda_account_id, params={"instruments": pair})
+            response = self._api.request(request)
+            prices = response.get("prices", [])
+            if not prices:
+                return None
+            quote = prices[0]
+            bid = float(quote["bids"][0]["price"])
+            ask = float(quote["asks"][0]["price"])
+            return {"bid": bid, "ask": ask, "spread": ask - bid, "timestamp": datetime.now(timezone.utc)}
+        except Exception:
+            log.exception(f"Error obteniendo precio OANDA para {pair}")
+            return None
+
+    def _generate_simulated_price(self, pair: str) -> Dict[str, Any]:
+        """Genera un precio simulado cuando no hay API key real configurada."""
+        mid = _SIMULATED_BASE_PRICES.get(pair, 1.0000)
+        spread = mid * 0.00015
+        return {
+            "bid": round(mid - spread / 2, 5),
+            "ask": round(mid + spread / 2, 5),
+            "spread": round(spread, 5),
+            "timestamp": datetime.now(timezone.utc),
+        }
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
     def get_latest_candles(self, pair: str, granularity: str = "M5", count: int = 10) -> List[Candle]:
@@ -81,14 +129,7 @@ class OandaClient:
         """
         Genera datos realistas en modo simulación cuando no se dispone de API Key.
         """
-        base_prices = {
-            "EUR_USD": 1.0850,
-            "USD_JPY": 155.20,
-            "GBP_USD": 1.2950,
-            "AUD_USD": 0.6550,
-            "USD_CHF": 0.8950,
-        }
-        base_price = base_prices.get(pair, 1.0000)
+        base_price = _SIMULATED_BASE_PRICES.get(pair, 1.0000)
         now = datetime.now(timezone.utc)
         step_seconds = 300 if granularity == "M5" else (60 if granularity == "M1" else 3600)
 
