@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from oandapyV20 import API
-from oandapyV20.endpoints.accounts import AccountSummary
+from oandapyV20.endpoints.accounts import AccountList, AccountSummary
 from oandapyV20.endpoints.instruments import InstrumentsCandles
 from oandapyV20.endpoints.pricing import PricingInfo
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -38,8 +38,9 @@ def _parse_oanda_time(raw: str) -> datetime:
 
 class OandaClient(MarketDataClient):
     def __init__(self, api_key: Optional[str] = None, account_id: Optional[str] = None, environment: Optional[str] = None):
-        self.api_key = (api_key or settings.oanda_api_key).strip()
-        self.account_id = (account_id or settings.oanda_account_id).strip()
+        # strip de espacios y comillas: es común pegarlas por error en los paneles de variables
+        self.api_key = (api_key or settings.oanda_api_key).strip().strip("'\"")
+        self.account_id = (account_id or settings.oanda_account_id).strip().strip("'\"")
         self.environment = (environment or settings.oanda_environment).strip().lower()
         self._api: Optional[API] = None
 
@@ -60,6 +61,7 @@ class OandaClient(MarketDataClient):
                 f"OANDA rechazó la conexión ({e}). Revisa que el token y el número de cuenta sean "
                 f"correctos y que OANDA_ENVIRONMENT='{self.environment}' coincida con el tipo de cuenta."
             )
+            self._log_available_accounts()
             self._api = None
             return False
 
@@ -68,6 +70,16 @@ class OandaClient(MarketDataClient):
             f"Balance {summary.get('balance')} {summary.get('currency')}"
         )
         return True
+
+    def _log_available_accounts(self):
+        """Si el token es válido, muestra los números de cuenta que puede usar (ayuda a configurar OANDA_ACCOUNT_ID)."""
+        try:
+            accounts = self._api.request(AccountList()).get("accounts", [])
+        except Exception:
+            return  # el token tampoco es válido para este entorno
+        ids = [a.get("id") for a in accounts if a.get("id")]
+        if ids:
+            log.error(f"👉 Tu token es válido. Cuentas disponibles para OANDA_ACCOUNT_ID: {', '.join(ids)}")
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
     def get_latest_candles(self, pair: str, granularity: str = "M5", count: int = 10) -> List[Candle]:

@@ -44,3 +44,23 @@ def test_candles_skip_forming_bar_and_respect_count():
     assert [c.close for c in candles] == [1.1010, 1.1020]
     assert candles[-1].timestamp == datetime(2026, 10, 13, 12, 10, tzinfo=timezone.utc)
     assert client._api.requests[0].params["count"] == 3  # pide una de más por la vela en formación
+
+
+class FailingSummaryAPI:
+    """Rechaza el accountID pero el token sí lista cuentas."""
+
+    def request(self, endpoint):
+        if type(endpoint).__name__ == "AccountSummary":
+            raise Exception('{"errorMessage":"Invalid value specified for \'accountID\'"}')
+        return {"accounts": [{"id": "101-001-1234567-001"}]}
+
+
+def test_invalid_account_logs_available_ids(monkeypatch, caplog):
+    import oanda_client
+
+    monkeypatch.setattr(oanda_client, "API", lambda **kw: FailingSummaryAPI())
+    client = OandaClient(api_key="tok", account_id='"12345"')
+    assert client.account_id == "12345"  # comillas pegadas por error se eliminan
+    with caplog.at_level("ERROR"):
+        assert client.connect() is False
+    assert "101-001-1234567-001" in caplog.text
