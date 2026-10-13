@@ -1,27 +1,21 @@
 # 🚀 Sistema Profesional de Trading Forex Algorítmico
 
-Plataforma integral y modular de **trading algorítmico y cuantitativo para el mercado Forex** basada en una **arquitectura orientada a eventos (Event-Driven) y microservicios**. Diseñada con Python 3.12+, OANDA REST API v20, TimescaleDB (PostgreSQL para series de tiempo), Redis Pub/Sub, Grafana y Telegram.
+Plataforma modular de **trading algorítmico para Forex** con **arquitectura orientada a eventos y microservicios**. Python 3.12+, **OANDA API / MetaTrader 5**, TimescaleDB, Redis Streams, Grafana y Telegram.
 
 ---
 
-## 🌟 ¿Qué se puede lograr con este proyecto?
+## 🌟 ¿Qué hace?
 
-1. **Trading 100% Autónomo 24/5**: Monitoreo y operación continua de múltiples pares de divisas (EUR/USD, USD/JPY, GBP/USD, AUD/USD) en OANDA con ejecución automática en milisegundos.
-2. **Gestión de Riesgo Institucional**:
-   - Dimensionamiento dinámico de lotes según el balance de cuenta y porcentaje de riesgo (ej. 1% por trade).
-   - Stop Loss y Take Profit automáticos vinculados en cada orden.
-   - *Circuit Breaker* / *Kill-Switch*: Bloqueo automático de nuevas operaciones si se alcanza el drawdown máximo diario configurado (ej. 5%).
-   - Filtros de spread alto y control de sobreexposición por par.
-3. **Motor Multi-Estrategia Modular**:
-   - **Cruce de Medias Móviles (EMA Crossover)**: Detección de tendencia con filtro EMA 200 y cálculo dinámico de SL/TP mediante múltiplos de ATR.
-   - **Reversión a la Media (Bollinger Bands + RSI)**: Captura de rebotes en extremos de sobrecompra/sobreventa.
-   - Facilidad para incorporar nuevas estrategias cuantitativas en pocas líneas de código.
-4. **Laboratorio de Backtesting Cuantitativo**:
-   - Simulación histórica con modelado de comisiones, spreads y slippage.
-   - Métricas financieras completas: *Sharpe Ratio, Sortino Ratio, Drawdown Máximo %, Win Rate, Profit Factor, Expectativa Matemática y Curva de Equity*.
-   - CLI interactivo y Jupyter Notebook para análisis visual.
-5. **Alertas en Tiempo Real por Telegram**: Notificaciones instantáneas con formato Markdown y emojis para cada señal generada, orden enviada al broker, trade cerrado con PnL ($ y pips) y alertas de riesgo.
-6. **Observabilidad en Vivo con Grafana**: Dashboards preconfigurados con cotizaciones en tiempo real, balance de cuenta, historial de operaciones y ratio de acierto.
+1. **Analiza precios en tiempo real** (API de OANDA en cualquier servidor, o MetaTrader 5 en Windows) y opera en simulación o en un broker real, con SL y TP adjuntos a cada orden.
+2. **Gestión de riesgo fail-closed**:
+   - Tamaño en lotes calculado con el `tick_value` real del broker (sirve para cualquier par, incluidos cruces). Nunca se redondea hacia arriba.
+   - Circuit breaker diario sobre la **equity** (incluye pérdidas flotantes).
+   - Límite de posiciones, un trade por par, filtro de spread, ratio riesgo/beneficio mínimo y descarte de señales viejas.
+   - Si falta información (BD caída, broker desconectado), **rechaza**.
+3. **Ejecución idempotente y reconciliada contra el broker**: una orden nunca se envía dos veces y el PnL registrado es el real de MT5 (con comisión y swap).
+4. **Motor multi-estrategia** (EMA Crossover, Bollinger + RSI) que evalúa cada vela cerrada una sola vez, con la misma ventana de historia en vivo y en backtest.
+5. **Backtesting con historial real** descargado desde tu terminal MT5.
+6. **Alertas** por Telegram y email, y **dashboards** en Grafana.
 
 ---
 
@@ -29,194 +23,101 @@ Plataforma integral y modular de **trading algorítmico y cuantitativo para el m
 
 ```mermaid
 flowchart TD
-    subgraph Mercado
-        OANDA[Broker OANDA API v20]
-    end
-
-    subgraph Data Collector
-        DC[data-collector] -->|Guarda Velas OHLC| TS[(TimescaleDB)]
-        DC -->|market:candle| REDIS[(Redis Event Bus)]
-    end
-
-    subgraph Strategy Engine
-        REDIS -->|market:candle| SE[strategy-engine]
-        TS -->|Histórico Velas| SE
-        SE -->|signals:new| REDIS
-        SE -->|Persiste Señal| TS
-    end
-
-    subgraph Risk Manager
-        REDIS -->|signals:new| RM[risk-manager]
-        RM -->|Valida Reglas & Lotes| RM
-        RM -->|orders:approved| REDIS
-        RM -->|risk:alerts| REDIS
-    end
-
-    subgraph Execution Engine
-        REDIS -->|orders:approved| EE[execution-engine]
-        EE -->|Envía Orden Bracket| OANDA
-        EE -->|orders:executed / closed| REDIS
-        EE -->|Reconcilia y Guarda PnL| TS
-    end
-
-    subgraph Monitoring & UI
-        REDIS --> MON[monitoring]
-        MON -->|Alertas en Vivo| TG[Telegram Bot]
-        TS --> GRAF[Grafana Dashboards]
-    end
-
-    OANDA -.->|Precios y Velas| DC
+    MT5[Terminal MT5 de XM] -.->|velas cerradas| DC[data-collector]
+    DC -->|guarda velas| TS[(TimescaleDB)]
+    DC -->|market:candle:PAR| REDIS[(Redis Streams)]
+    REDIS --> SE[strategy-engine]
+    TS --> SE
+    SE -->|signals:new| REDIS
+    REDIS --> RM[risk-manager]
+    RM -->|reserva orden 'pending'| TS
+    RM -->|orders:approved| REDIS
+    REDIS --> EE[execution-engine]
+    EE -->|order_send con SL/TP| MT5
+    EE -->|estado de cuenta + specs de símbolos| REDIS
+    EE -->|reconciliación contra el broker| TS
+    REDIS --> MON[monitoring] --> TG[Telegram / Email]
+    TS --> GRAF[Grafana]
 ```
+
+- **Redis Streams** (no Pub/Sub): si un servicio se reinicia, procesa los mensajes que quedaron pendientes.
+- El **execution-engine** es el único que opera en el broker. Cada 5 s publica el balance, la equity y las especificaciones de los símbolos que usa el risk-manager.
+- **Ciclo de una orden**: `pending` (reservada por risk) → `submitting` → `filled` → `closed`, o `rejected`/`cancelled`.
 
 ---
 
-## 📁 Estructura del Proyecto
+## ☁️ Puesta en marcha en un servidor (Docker / Dokploy) con datos de OANDA
 
-```
-forex-trading-system/
-│
-├── .env.example                     # Plantilla de configuración documentada
-├── docker-compose.yml               # Orquestación de producción de todos los servicios
-├── docker-compose-dev.yml           # Orquestación de infraestructura local (BD, Redis, Grafana)
-├── README.md                        # Documentación principal
-│
-├── shared/                          # Capa compartida (modelos Pydantic, config, logger, bus)
-│   ├── config.py
-│   ├── logger.py
-│   ├── models.py
-│   └── bus.py
-│
-├── services/
-│   ├── data-collector/              # Ingesta periódica de velas OANDA -> TimescaleDB + Redis
-│   ├── strategy-engine/             # Cálculo de indicadores técnicos y evaluación de estrategias
-│   ├── risk-manager/                # Dimensionamiento de posición y reglas de control de riesgo
-│   ├── execution-engine/            # Ejecución de órdenes en broker y reconciliación de SL/TP
-│   └── monitoring/                  # Monitoreo de salud y notificaciones en vivo por Telegram
-│
-├── backtesting/                     # Módulo de investigación cuantitativa y backtesting
-│   ├── src/
-│   │   ├── data_loader.py           # Cargador desde BD, CSV o generador sintético
-│   │   ├── metrics.py               # Fórmulas cuantitativas (Sharpe, Drawdown, Profit Factor)
-│   │   ├── engine.py                # Motor de simulación con spreads y comisiones
-│   │   └── run_backtest.py          # CLI ejecutable para backtesting
-│   └── notebooks/
-│       └── explore_strategy.ipynb   # Notebook interactivo de análisis visual
-│
-├── infra/
-│   ├── postgres/init.sql            # Esquema SQL TimescaleDB con hypertables e índices
-│   └── grafana/                     # Datasources y Dashboards autoprovisionados
-│
-└── tests/                           # Suite de pruebas unitarias automatizadas (pytest)
-```
+La forma más simple: todo corre en Linux y los precios en tiempo real llegan por la API REST de OANDA. Basta con una **cuenta demo gratuita** de OANDA: no hace falta operar con ellos. Las órdenes quedan **simuladas** (`DRY_RUN=true`) hasta que elijas broker.
+
+1. Crea una cuenta demo en OANDA y genera tu token en *Manage API Access*.
+2. Configura las variables (ver `.env.example`): `MARKET_DATA_PROVIDER=oanda`, `OANDA_API_KEY`, `OANDA_ACCOUNT_ID`, `OANDA_ENVIRONMENT=practice` y `DRY_RUN=true`.
+3. Despliega con `docker compose up -d --build`. La base de datos debe ser TimescaleDB y haber ejecutado `infra/postgres/init.sql`.
+4. Verifica la fuente de datos: `python scripts/check_feed.py`.
+
+**Cuando elijas broker:** si tiene API REST, se agrega un adaptador en `services/execution-engine/src/brokers.py` (la interfaz `Broker`). Si es un broker MetaTrader 5, ya está implementado (sección siguiente). El resto del sistema no cambia.
 
 ---
 
-## ⚡ Inicio Rápido (Quickstart)
+## ⚡ Alternativa: broker MetaTrader 5 (XM u otro, Windows)
 
-### 1. Clonar el Repositorio y Configurar Variables de Entorno
+XM no tiene API REST: el sistema habla con el **terminal MetaTrader 5 de XM** instalado en tu PC mediante la librería `MetaTrader5` (solo Windows). Postgres, Redis y Grafana corren en Docker; los servicios Python, nativos.
 
+### 1. Requisitos
+- Terminal **MT5 de XM** instalado, con sesión iniciada y el botón **Algo Trading** activado.
+- **Docker Desktop** abierto.
+- **Python 3.12+**.
+
+### 2. Instalación
 ```powershell
-cp .env.example .env
+python -m venv .venv
+.venv\Scripts\pip install -r requirements-local.txt
+copy .env.example .env
 ```
+Edita `.env`: `MT5_LOGIN`, `MT5_PASSWORD` y `MT5_SERVER` (vienen en el correo de XM). Deja `DRY_RUN=true` al principio.
 
-Edita `.env` con tus credenciales de OANDA y Telegram:
-```ini
-OANDA_API_KEY=tu_api_key
-OANDA_ACCOUNT_ID=tu_account_id
-OANDA_ENVIRONMENT=practice  # practice para demo, live para real
-
-FOREX_PAIRS=EUR_USD,USD_JPY,GBP_USD,AUD_USD
-CANDLE_GRANULARITY=M5
-RISK_PER_TRADE_PCT=1.0
-
-TELEGRAM_BOT_TOKEN=tu_token_de_telegram
-TELEGRAM_CHAT_ID=tu_chat_id
-```
-
-> **Nota de Simulación**: Si no tienes credenciales de OANDA a mano, puedes dejar `DRY_RUN=true` en `.env` y el sistema correrá en modo simulación automática sin arriesgar capital.
-
----
-
-### 2. Despliegue con Docker Compose (Recomendado)
-
-Inicia todos los microservicios y la infraestructura con un solo comando:
-
+### 3. Verificar la conexión con XM (no envía órdenes)
 ```powershell
-docker compose up -d --build
+.venv\Scripts\python scripts\check_mt5.py
 ```
+Muestra si la cuenta es demo o real, si Algo Trading está activo, el nombre real de cada símbolo (ajusta `MT5_SYMBOL_SUFFIX` si tu cuenta usa sufijos, p.ej. `micro`), los spreads y cuántos lotes abriría con tu riesgo.
 
-Verifica el estado de los contenedores:
+### 4. Arrancar todo
 ```powershell
-docker compose ps
+powershell -ExecutionPolicy Bypass -File scripts\start_local.ps1
 ```
+Levanta la infraestructura en Docker, revisa MT5 y abre una ventana por servicio. Grafana: http://localhost:3000 (admin/admin).
 
-Accede al dashboard de monitoreo:
-- **Grafana**: [http://localhost:3000](http://localhost:3000) (Usuario: `admin` / Password: `admin`)
-- **Dashboard Trading**: Menú `Dashboards` ➔ `Trading` ➔ `Forex Algorithmic Trading Overview`
+### 5. Modos de operación (de menos a más riesgo)
+| `.env` | Qué pasa |
+|---|---|
+| `DRY_RUN=true` | Precios reales de XM, órdenes **simuladas** (paper trading). |
+| `DRY_RUN=false` + cuenta **demo** | Órdenes reales en tu cuenta demo de XM. |
+| `DRY_RUN=false` + cuenta **real** | El execution-engine **se niega a arrancar**… |
+| … + `ALLOW_LIVE_TRADING=true` | …salvo que actives explícitamente este candado. |
 
-Para ver los logs en tiempo real:
+### Si ya tenías la base de datos de la versión anterior
 ```powershell
-docker compose logs -f monitoring
+docker exec -i forex_timescaledb_dev psql -U forex -d forex_data < infra\postgres\migrations\001_xm_mt5.sql
 ```
+Agrega las columnas nuevas, cancela las órdenes viejas que no se pueden reconciliar y **borra las velas guardadas antes**, porque tenían la hora mal. El data-collector vuelve a descargar el historial al arrancar.
 
-Para detener el sistema:
-```powershell
-docker compose down
-```
-
----
-
-### 3. Desarrollo Local (Modo Híbrido)
-
-Si prefieres ejecutar y depurar los servicios Python directamente en tu máquina:
-
-1. Levanta la infraestructura de soporte (Base de datos, Redis, Grafana):
-   ```powershell
-   docker compose -f docker-compose-dev.yml up -d
-   ```
-2. Instala las dependencias en tu entorno Python:
-   ```powershell
-   pip install -r services/data-collector/requirements.txt
-   pip install -r services/strategy-engine/requirements.txt
-   pip install -r services/risk-manager/requirements.txt
-   pip install -r services/execution-engine/requirements.txt
-   pip install -r services/monitoring/requirements.txt
-   pip install -r backtesting/requirements.txt
-   ```
-3. Ejecuta cualquier servicio individualmente:
-   ```powershell
-   python services/data-collector/src/main.py
-   python services/strategy-engine/src/main.py
-   python services/risk-manager/src/main.py
-   python services/execution-engine/src/main.py
-   python services/monitoring/src/main.py
-   ```
+> `docker-compose.yml` (todo en Docker) no sirve para XM, porque MT5 no corre en Linux. Úsalo solo en modo simulación con otra fuente de datos.
 
 ---
 
 ## 🧪 Laboratorio de Backtesting
 
-Puedes simular el rendimiento de cualquier estrategia contra datos históricos reales o sintéticos:
-
 ```powershell
-# Ejecutar simulación de Cruce de Medias en EUR/USD con $10,000 iniciales y 1% de riesgo
-python backtesting/src/run_backtest.py --pair EUR_USD --strategy ma_crossover --capital 10000 --risk 1.0
-
-# Ejecutar simulación de Reversión a la Media en USD/JPY
-python backtesting/src/run_backtest.py --pair USD_JPY --strategy mean_reversion --capital 10000 --risk 1.0
+# Historial real desde tu terminal XM (por defecto)
+.venv\Scripts\python backtesting\src\run_backtest.py --pair EUR_USD --strategy ma_crossover --candles 50000
+# Otras fuentes: --source db | --source csv --csv archivo.csv | --source synthetic (solo para probar el código)
 ```
+Opciones: `--pair`, `--strategy` (`ma_crossover` | `mean_reversion`), `--capital`, `--risk`, `--spread`, `--candles`, `--granularity`, `--source`, `--csv`.
 
-### Opciones del CLI de Backtest:
-- `--pair`: Par a evaluar (`EUR_USD`, `USD_JPY`, `GBP_USD`, etc.).
-- `--strategy`: Estrategia (`ma_crossover` o `mean_reversion`).
-- `--capital`: Capital inicial en USD (por defecto `10000`).
-- `--risk`: Riesgo por trade en % (por defecto `1.0`).
-- `--spread`: Spread simulado en pips (por defecto `1.2`).
-- `--candles`: Cantidad de velas a evaluar.
-- `--csv`: Ruta opcional a un archivo CSV con datos históricos personalizados.
+El backtester soporta pares con USD (`XXX_USD`, `USD_XXX`) y reporta el PnL en USD.
 
 ---
-
 ## 🧩 Cómo Crear una Nueva Estrategia
 
 1. Crea un nuevo archivo en `services/strategy-engine/src/strategies/mi_estrategia.py`:
@@ -255,6 +156,7 @@ class MiEstrategia(BaseStrategy):
         return None
 ```
 2. Regístrala en `services/strategy-engine/src/main.py` dentro de la lista de estrategias activas.
+3. **Antes de activarla en vivo**, pruébala en el backtester con historial real y después en `DRY_RUN=true`.
 
 ---
 
@@ -263,13 +165,15 @@ class MiEstrategia(BaseStrategy):
 Ejecuta toda la suite de pruebas unitarias para validar indicadores, reglas de riesgo, ejecución y backtester:
 
 ```powershell
-python -m pytest tests/ -v
+.venv\Scripts\python -m pytest tests -v
 ```
 
 ---
 
 ## 🛡️ Seguridad y Buenas Prácticas
 
-- **Nunca commitees tu archivo `.env`** con claves reales de OANDA o tokens de Telegram.
-- Comienza siempre en modo `practice` (Demo) hasta comprobar la consistencia de tu estrategia.
+- **Nunca commitees tu archivo `.env`** con tu contraseña de XM o tokens de Telegram.
+- Sigue el orden: backtest con datos reales → `DRY_RUN=true` → cuenta demo de XM → cuenta real pequeña.
+- `ALLOW_LIVE_TRADING=true` es la única forma de operar una cuenta real: no lo actives hasta tener meses de resultados en demo.
+- Si cierras manualmente una posición del sistema en MT5, la reconciliación lo detecta y registra el resultado.
 - Mantén activas las alertas de Telegram para estar al tanto de cualquier evento en el mercado.

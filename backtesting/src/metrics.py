@@ -119,7 +119,12 @@ def calculate_metrics(
     # Ratios Sharpe y Sortino
     if not equity_series.empty and len(equity_series) > 1:
         returns = equity_series.pct_change().dropna()
-        n_periods_per_year = 252 * 288  # aprox velas de 5 min al año
+        # Periodos por año según la temporalidad real de los datos (Forex ~ 252 días x 24 h)
+        if isinstance(equity_series.index, pd.DatetimeIndex) and len(equity_series) > 2:
+            bar_minutes = max(1.0, equity_series.index.to_series().diff().median().total_seconds() / 60.0)
+        else:
+            bar_minutes = 5.0
+        n_periods_per_year = 252 * 1440 / bar_minutes
         mean_ret = returns.mean() * n_periods_per_year
         std_ret = returns.std() * np.sqrt(n_periods_per_year)
 
@@ -130,7 +135,10 @@ def calculate_metrics(
         sortino = (mean_ret - risk_free_rate) / downside_std if downside_std > 0 else 0.0
 
         # Estimación CAGR (días transcurridos)
-        days = max(1.0, (equity_series.index[-1] - equity_series.index[0]).total_seconds() / 86400.0) if hasattr(equity_series.index, "total_seconds") else len(equity_series) / 288
+        if isinstance(equity_series.index, pd.DatetimeIndex):
+            days = max(1.0, (equity_series.index[-1] - equity_series.index[0]).total_seconds() / 86400.0)
+        else:
+            days = len(equity_series) * bar_minutes / 1440.0
         cagr = (((final_balance / initial_balance) ** (365.0 / days)) - 1.0) * 100.0 if days > 30 and final_balance > 0 else total_return_pct
     else:
         sharpe = 0.0

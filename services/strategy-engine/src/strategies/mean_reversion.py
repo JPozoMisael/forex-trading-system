@@ -63,10 +63,15 @@ class MeanReversionStrategy(BaseStrategy):
 
         # Señal de Compra por Reversión:
         # Precio tocó o perforó la banda inferior y RSI sale de sobreventa
-        if (prev_close <= lower_bb.iloc[-2] or low.iloc[-1] <= curr_lower) and (curr_rsi < self.rsi_oversold + 5) and (curr_close > prev_close):
+        # El objetivo es la media de Bollinger (SMA): si el precio ya está encima, no hay recorrido.
+        if (
+            (prev_close <= lower_bb.iloc[-2] or low.iloc[-1] <= curr_lower)
+            and (curr_rsi < self.rsi_oversold + 5)
+            and (curr_close > prev_close)
+            and (curr_mid > curr_close)
+        ):
             sl = round(curr_close - (curr_atr * self.atr_sl_multiplier), 5)
-            # TP objetivo hacia la media de Bollinger (SMA 20) o más allá
-            tp = round(max(curr_mid, curr_close + (curr_atr * 2.0)), 5)
+            tp = round(curr_mid, 5)
             return Signal(
                 pair=pair,
                 strategy_name=self.name,
@@ -86,9 +91,14 @@ class MeanReversionStrategy(BaseStrategy):
 
         # Señal de Venta por Reversión:
         # Precio tocó o perforó la banda superior y RSI sale de sobrecompra
-        if (prev_close >= upper_bb.iloc[-2] or high.iloc[-1] >= curr_upper) and (curr_rsi > self.rsi_overbought - 5) and (curr_close < prev_close):
+        if (
+            (prev_close >= upper_bb.iloc[-2] or high.iloc[-1] >= curr_upper)
+            and (curr_rsi > self.rsi_overbought - 5)
+            and (curr_close < prev_close)
+            and (curr_mid < curr_close)
+        ):
             sl = round(curr_close + (curr_atr * self.atr_sl_multiplier), 5)
-            tp = round(min(curr_mid, curr_close - (curr_atr * 2.0)), 5)
+            tp = round(curr_mid, 5)
             return Signal(
                 pair=pair,
                 strategy_name=self.name,

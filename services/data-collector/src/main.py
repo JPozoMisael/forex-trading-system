@@ -5,7 +5,7 @@ import time
 import os
 
 # Agregar la raíz del proyecto al PYTHONPATH
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from shared.config import settings
 from shared.logger import get_logger
@@ -32,22 +32,20 @@ def build_market_client() -> MarketDataClient:
     provider = settings.market_data_provider
 
     if provider == "mt5":
-        # Solo funciona corriendo nativo en Windows con el terminal MT5 abierto.
+        # XM y cualquier broker MT5. Solo corre nativo en Windows con el terminal abierto.
         from shared.mt5_client import MT5Client
         client = MT5Client()
-        log.info(f"✅ Usando MT5 como fuente de datos (servidor: {settings.mt5_server})")
+        log.info(f"✅ Usando MT5 como fuente de datos (servidor: {settings.mt5_server or 'el del terminal'})")
 
     elif provider == "oanda":
-        # Único proveedor apto para el despliegue en Dokploy/Linux (API REST,
-        # no requiere terminal de escritorio). Ver .env.production.example.
         from oanda_client import OandaClient
         client = OandaClient()
         log.info("✅ Usando OANDA como fuente de datos")
 
     else:
         raise ValueError(
-            f"MARKET_DATA_PROVIDER='{provider}' no soportado. Usa 'mt5' (pruebas locales en Windows) "
-            f"u 'oanda' (despliegue Dokploy/Linux), o agrega la rama correspondiente en build_market_client()."
+            f"MARKET_DATA_PROVIDER='{provider}' no soportado. Usa 'mt5' (XM) u 'oanda', "
+            f"o agrega la rama correspondiente en build_market_client()."
         )
 
     if not client.connect():
@@ -71,30 +69,36 @@ def main():
     db = DBWriter()
     bus = EventBus()
 
+    # Última vela publicada por par: cada vela cerrada se publica UNA sola vez,
+    # así el strategy-engine no reevalúa (ni duplica señales de) la misma vela.
+    last_published = {}
+
     while running:
         for pair in settings.forex_pairs:
             if not running:
                 break
             try:
+                # Primera pasada: backfill para que las estrategias tengan historia (EMA 200).
+                count = 5 if pair in last_published else settings.collector_backfill_candles
                 candles = client.get_latest_candles(
                     pair=pair,
                     granularity=settings.candle_granularity,
-                    count=5,
+                    count=count,
                 )
-                if candles:
-                    try:
-                        db.write_candles(candles)
-                    except Exception as db_err:
-                        log.warning(f"No se pudo guardar en BD: {db_err}")
+                if not candles:
+                    continue
 
-                    latest_candle = candles[-1]
-                    try:
-                        bus.publish(
-                            f"{settings.channel_market_candle}:{pair}",
-                            latest_candle,
-                        )
-                    except Exception as bus_err:
-                        log.debug(f"Aviso Redis al publicar vela de {pair}: {bus_err}")
+                # Si la BD falla no publicamos: el strategy-engine lee la historia
+                # desde la BD y evaluaría sin la vela nueva.
+                db.write_candles(candles)
+
+                latest_candle = candles[-1]
+                if last_published.get(pair) == latest_candle.timestamp:
+                    continue
+
+                bus.publish(f"{settings.channel_market_candle}:{pair}", latest_candle)
+                last_published[pair] = latest_candle.timestamp
+                log.info(f"🕯️ Vela cerrada {pair} {latest_candle.timestamp:%Y-%m-%d %H:%M} UTC close={latest_candle.close}")
 
             except Exception:
                 log.exception(f"Fallo recolectando {pair}, se continúa con el siguiente par")
@@ -106,6 +110,8 @@ def main():
 
     db.close()
     bus.close()
+    if hasattr(client, "disconnect"):
+        client.disconnect()
     log.info("Servicio data-collector finalizado correctamente.")
 
 if __name__ == "__main__":

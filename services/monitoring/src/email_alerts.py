@@ -89,26 +89,30 @@ class EmailNotifier:
 
         pair = order.get("pair", "UNKNOWN")
         direction = str(order.get("direction", "")).upper()
-        units = order.get("units", 0)
+        units = order.get("units") or 0
+        lots = order.get("volume_lots")
+        status = str(order.get("status", "filled")).upper()
+        error = order.get("error")
         entry = order.get("entry_price", 0.0)
-        ticket = order.get("oanda_order_id", "SIMULATED")
+        ticket = order.get("broker_ticket") or "N/A"
         sl = order.get("stop_loss", "N/A")
         tp = order.get("take_profit", "N/A")
-        mode = "LIVE" if settings.oanda_environment == "live" and not settings.dry_run else "DEMO / SIM"
+        mode = "SIMULACION" if settings.dry_run else f"MT5 {settings.mt5_server}"
 
-        subject = f"[Orden Ejecutada] {pair} {direction} - {mode}"
+        subject = f"[Orden {status}] {pair} {direction} - {mode}"
         body = (
-            f"ORDEN EJECUTADA EN BROKER\n"
+            f"ORDEN {status}\n"
             f"----------------------------------------\n"
             f"Ambiente: {mode}\n"
             f"Par: {pair} | {direction}\n"
-            f"Unidades: {units:,}\n"
+            f"Volumen: {lots} lotes ({units:,} unidades)\n"
             f"Precio Entrada: {entry}\n"
             f"Stop Loss: {sl}\n"
             f"Take Profit: {tp}\n"
             f"Ticket ID: {ticket}\n"
-            f"----------------------------------------\n"
-            f"Operación asegurada con SL y TP activos."
+            + (f"Motivo: {error}\n" if error else "")
+            + f"----------------------------------------\n"
+            + ("Operación asegurada con SL y TP activos." if status == "FILLED" else "La orden NO se abrió.")
         )
         self.send_message(subject, body)
 
@@ -119,7 +123,7 @@ class EmailNotifier:
 
         pair = trade.get("pair", "UNKNOWN")
         direction = str(trade.get("direction", "")).upper()
-        pnl = float(trade.get("pnl", 0.0))
+        pnl = float(trade.get("pnl") or 0.0)
         pips = float(trade.get("pips", 0.0))
         roi = float(trade.get("roi_pct", 0.0))
         entry = trade.get("entry_price", 0.0)
@@ -143,7 +147,7 @@ class EmailNotifier:
             f"Par: {pair} ({direction})\n"
             f"Motivo Cierre: {reason}\n"
             f"PnL Realizado: {pnl_str} ({pip_str})\n"
-            f"Retorno: {roi:+.2f}%\n"
+            f"Resultado / Riesgo: {roi:+.1f}% del riesgo asumido\n"
             f"Entrada: {entry} -> Salida: {exit_p}\n"
             f"Duración: {duration:.1f} min\n"
             f"----------------------------------------"

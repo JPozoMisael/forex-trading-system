@@ -3,10 +3,13 @@ Punto de entrada del servicio monitoring.
 Escucha todos los eventos del ecosistema en Redis (señales, órdenes, cierres, alertas de riesgo)
 y los despacha como notificaciones en vivo hacia Telegram y consola.
 """
+import os
 import signal
 import sys
 import threading
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from shared.config import settings
 from shared.logger import get_logger
@@ -30,12 +33,28 @@ def _handle_shutdown(signum, frame):
 def _health_monitor_loop(checker: HealthChecker, notifier: TelegramNotifier):
     """Hilo periódico para verificación de salud del sistema."""
     log.info("Iniciando monitor periódico de salud...")
+    last_status = "UP"
     while running:
         try:
             report = checker.run_full_check()
-            log.info(f"❤️ Estado del Sistema: {report['overall_status']} | PG: {report['postgres'].get('status')} | Redis: {report['redis'].get('status')}")
+            log.info(
+                f"❤️ Estado del Sistema: {report['overall_status']} | PG: {report['postgres'].get('status')} | "
+                f"Redis: {report['redis'].get('status')} | Broker: {report['broker'].get('status')}"
+            )
             if report["overall_status"] != "UP":
                 log.warning(f"⚠️ Alerta de Degradación de Infraestructura: {report}")
+            # Avisar solo en los cambios de estado para no inundar Telegram
+            if report["overall_status"] != last_status:
+                if report["overall_status"] == "UP":
+                    notifier.send_message("✅ *Sistema recuperado*: todos los componentes operativos.")
+                else:
+                    notifier.send_message(
+                        f"🚨 *Sistema DEGRADADO*\n"
+                        f"PostgreSQL: `{report['postgres'].get('status')}`\n"
+                        f"Redis: `{report['redis'].get('status')}`\n"
+                        f"Broker: `{report['broker'].get('status')}` ({report['broker'].get('detail', '')})"
+                    )
+                last_status = report["overall_status"]
         except Exception as e:
             log.error(f"Error en health check: {e}")
 
@@ -70,9 +89,7 @@ def main():
     log.info(f"Escuchando canales de eventos para alertas: {channels}")
 
     try:
-        for channel, data in bus.subscribe(*channels):
-            if not running:
-                break
+        for channel, data in bus.subscribe(*channels, group="monitoring", should_stop=lambda: not running):
 
             if channel == settings.channel_signals_new:
                 method = "send_signal_alert"
@@ -95,8 +112,6 @@ def main():
                 except Exception as ev_err:
                     log.error(f"Error despachando alerta {label} para canal '{channel}': {ev_err}")
 
-    except KeyboardInterrupt:
-        log.info("Deteniendo monitoring...")
     finally:
         checker.close()
         bus.close()

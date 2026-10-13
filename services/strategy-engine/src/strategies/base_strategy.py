@@ -20,6 +20,15 @@ class BaseStrategy(ABC):
         """Número mínimo de velas necesarias para calcular indicadores confiables."""
         pass
 
+    @property
+    def lookback_window(self) -> int:
+        """
+        Velas de historia que recibe evaluate(), igual en vivo y en backtest.
+        3x el mínimo para que las EMAs largas converjan (una EMA 200 calculada
+        sobre solo 205 velas difiere bastante de la del gráfico).
+        """
+        return self.min_candles_required * 3
+
     @abstractmethod
     def evaluate(self, df: pd.DataFrame, pair: str) -> Optional[Signal]:
         """

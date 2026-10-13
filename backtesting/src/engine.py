@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from shared.models import Signal, SignalDirection, OrderSide
 from strategies.base_strategy import BaseStrategy
 from position_sizing import calculate_position_size, get_pip_size
+from shared.fx import quote_to_usd_rate
 from metrics import BacktestMetrics, calculate_metrics
 
 
@@ -58,6 +59,8 @@ class BacktestEngine:
         """
         if df.empty or len(df) < strategy.min_candles_required:
             raise ValueError(f"DataFrame insuficiente ({len(df)} velas, se requieren al menos {strategy.min_candles_required})")
+        if quote_to_usd_rate(pair, float(df["close"].iloc[-1])) is None:
+            raise ValueError(f"{pair}: el backtester solo soporta pares con USD (XXX_USD o USD_XXX)")
 
         pip_size = get_pip_size(pair)
         spread_cost = self.spread_pips * pip_size
@@ -107,12 +110,9 @@ class BacktestEngine:
                         exit_reason = "tp"
 
                 if closed:
-                    if side == OrderSide.BUY:
-                        pnl = (exit_price - entry) * units
-                        pips = (exit_price - entry) / pip_size
-                    else:
-                        pnl = (entry - exit_price) * units
-                        pips = (entry - exit_price) / pip_size
+                    diff = (exit_price - entry) if side == OrderSide.BUY else (entry - exit_price)
+                    pnl = diff * units * quote_to_usd_rate(pair, exit_price)  # en USD
+                    pips = diff / pip_size
 
                     comm = units * self.commission_per_unit
                     pnl -= comm
@@ -132,7 +132,7 @@ class BacktestEngine:
                         "take_profit": tp,
                         "pnl": round(pnl, 2),
                         "pips": round(pips, 1),
-                        "roi_pct": round((pnl / (entry * units / 30.0)) * 100, 2) if units > 0 else 0.0,
+                        "roi_pct": round(pnl / active_trade["risk_usd"] * 100, 1) if active_trade["risk_usd"] else 0.0,
                         "exit_reason": exit_reason,
                         "balance_after": round(balance, 2),
                     }
@@ -141,7 +141,7 @@ class BacktestEngine:
 
             # 2. Evaluar nueva señal si no hay posición activa
             if active_trade is None and balance > 100:
-                hist_slice = df.iloc[: i + 1]
+                hist_slice = df.iloc[max(0, i + 1 - strategy.lookback_window): i + 1]
                 sig = strategy.evaluate(hist_slice, pair=pair)
 
                 if sig and sig.direction in (SignalDirection.BUY, SignalDirection.SELL):
@@ -169,6 +169,7 @@ class BacktestEngine:
                         active_trade = {
                             "side": side,
                             "units": units,
+                            "risk_usd": abs(entry_price - sl) * units * quote_to_usd_rate(pair, entry_price),
                             "entry_price": round(entry_price, 5),
                             "entry_time": bar_time,
                             "stop_loss": sl,
@@ -182,18 +183,16 @@ class BacktestEngine:
                     current_floating_pnl = (c - active_trade["entry_price"]) * active_trade["units"]
                 else:
                     current_floating_pnl = (active_trade["entry_price"] - c) * active_trade["units"]
+                current_floating_pnl *= quote_to_usd_rate(pair, c)
 
             equity_records[bar_time] = balance + current_floating_pnl
 
         # Cerrar posición residual al final del periodo si quedó abierta
         if active_trade is not None:
             c = df.iloc[-1]["close"]
-            if active_trade["side"] == OrderSide.BUY:
-                pnl = (c - active_trade["entry_price"]) * active_trade["units"]
-                pips = (c - active_trade["entry_price"]) / pip_size
-            else:
-                pnl = (active_trade["entry_price"] - c) * active_trade["units"]
-                pips = (active_trade["entry_price"] - c) / pip_size
+            diff = (c - active_trade["entry_price"]) if active_trade["side"] == OrderSide.BUY else (active_trade["entry_price"] - c)
+            pnl = diff * active_trade["units"] * quote_to_usd_rate(pair, c)
+            pips = diff / pip_size
 
             balance += pnl
             trades.append(

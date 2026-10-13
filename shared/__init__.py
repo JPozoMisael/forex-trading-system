@@ -15,6 +15,7 @@ from shared.models import (
     RiskAssessment,
     AccountSummary,
     TradeResult,
+    SymbolSpec,
 )
 from shared.bus import EventBus
 
@@ -32,5 +33,6 @@ __all__ = [
     "RiskAssessment",
     "AccountSummary",
     "TradeResult",
+    "SymbolSpec",
     "EventBus",
 ]

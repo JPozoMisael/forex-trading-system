@@ -37,20 +37,32 @@ CREATE INDEX IF NOT EXISTS idx_signals_pair_time
     ON signals (pair, timestamp DESC);
 
 -- 3. Tabla de Órdenes y Posiciones
+-- Ciclo de vida: pending (reservada por risk-manager) -> submitting -> filled -> closed
+--                                                        \-> rejected / cancelled
 CREATE TABLE IF NOT EXISTS orders (
     id              SERIAL PRIMARY KEY,
     pair            TEXT NOT NULL,
     direction       TEXT NOT NULL,
     units           INTEGER NOT NULL,
+    volume_lots     DOUBLE PRECISION,
     entry_price     DOUBLE PRECISION,
     stop_loss       DOUBLE PRECISION,
     take_profit     DOUBLE PRECISION,
     status          TEXT DEFAULT 'pending',
-    oanda_order_id  TEXT,
+    execution_mode  TEXT,                -- 'mt5' | 'sim'
+    broker_ticket   TEXT,                -- ticket de la posición en MT5 (o SIM_xxx)
+    strategy_name   TEXT,
+    signal_id       INTEGER,
+    risk_amount     DOUBLE PRECISION,    -- riesgo en divisa de la cuenta si toca el SL
     opened_at       TIMESTAMPTZ,
     closed_at       TIMESTAMPTZ,
-    pnl             DOUBLE PRECISION,
-    created_at      TIMESTAMPTZ DEFAULT now()
+    exit_price      DOUBLE PRECISION,
+    exit_reason     TEXT,                -- tp | sl | manual | stop_out | expert
+    pnl             DOUBLE PRECISION,    -- en divisa de la cuenta, incluye comisión y swap
+    error           TEXT,
+    metadata        JSONB,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_status
@@ -59,17 +71,16 @@ CREATE INDEX IF NOT EXISTS idx_orders_status
 -- 4. Vista de Resumen de Rendimiento por Estrategia
 CREATE OR REPLACE VIEW v_strategy_performance AS
 SELECT
-    COALESCE(s.strategy_name, 'Desconocida') AS strategy,
-    COUNT(o.id) AS total_trades,
-    COUNT(CASE WHEN o.pnl > 0 THEN 1 END) AS winning_trades,
-    COUNT(CASE WHEN o.pnl < 0 THEN 1 END) AS losing_trades,
-    ROUND(CAST(AVG(CASE WHEN o.pnl > 0 THEN 1.0 ELSE 0.0 END) * 100 AS numeric), 2) AS win_rate_pct,
-    ROUND(CAST(SUM(COALESCE(o.pnl, 0)) AS numeric), 2) AS total_pnl_usd,
-    ROUND(CAST(AVG(COALESCE(o.pnl, 0)) AS numeric), 2) AS avg_trade_pnl
-FROM orders o
-LEFT JOIN signals s ON o.pair = s.pair AND ABS(EXTRACT(EPOCH FROM (o.opened_at - s.timestamp))) < 300
-WHERE o.status = 'closed'
-GROUP BY s.strategy_name;
+    COALESCE(strategy_name, 'Desconocida') AS strategy,
+    COUNT(id) AS total_trades,
+    COUNT(CASE WHEN pnl > 0 THEN 1 END) AS winning_trades,
+    COUNT(CASE WHEN pnl < 0 THEN 1 END) AS losing_trades,
+    ROUND(CAST(AVG(CASE WHEN pnl > 0 THEN 1.0 ELSE 0.0 END) * 100 AS numeric), 2) AS win_rate_pct,
+    ROUND(CAST(SUM(COALESCE(pnl, 0)) AS numeric), 2) AS total_pnl_usd,
+    ROUND(CAST(AVG(COALESCE(pnl, 0)) AS numeric), 2) AS avg_trade_pnl
+FROM orders
+WHERE status = 'closed'
+GROUP BY strategy_name;
 
 -- 5. Vista de PnL Diario
 CREATE OR REPLACE VIEW v_daily_pnl AS

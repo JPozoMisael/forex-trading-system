@@ -1,20 +1,65 @@
 """
 Módulo de dimensionamiento de posición (Position Sizing).
-Calcula el número exacto de unidades/lotes según el porcentaje de riesgo por operación,
-el balance de la cuenta, la distancia al Stop Loss y el valor del pip por par.
+
+Calcula cuánto operar para no arriesgar más de `risk_pct`% del balance si se
+toca el Stop Loss. Regla de oro: siempre se redondea HACIA ABAJO; si el tamaño
+mínimo del broker ya supera el riesgo permitido, no se opera.
 """
+import math
 from typing import Optional
+
+from shared.fx import get_pip_size, quote_to_usd_rate  # re-export para compatibilidad
 from shared.logger import get_logger
+from shared.models import SymbolSpec
 
 log = get_logger(__name__)
 
+__all__ = ["get_pip_size", "calculate_lots", "calculate_position_size"]
 
-def get_pip_size(pair: str) -> float:
-    """Retorna el tamaño de 1 pip para el par especificado."""
-    pair_clean = pair.upper().replace("/", "_").replace("-", "_")
-    if "JPY" in pair_clean or "XAU" in pair_clean:
-        return 0.01
-    return 0.0001
+
+def calculate_lots(
+    account_balance: float,
+    risk_pct: float,
+    entry_price: float,
+    stop_loss_price: float,
+    spec: SymbolSpec,
+) -> float:
+    """
+    Lotes a operar usando la especificación del broker (MT5 symbol_info).
+
+    tick_value es lo que vale 1 tick para 1 lote en la divisa de la cuenta, y MT5
+    ya incluye la conversión para cruces (EUR_GBP, AUD_JPY...), así que esta
+    fórmula sirve para cualquier par:
+
+        riesgo_por_lote = (distancia_SL / tick_size) * tick_value
+        lotes = riesgo_permitido / riesgo_por_lote   (redondeado hacia abajo al volume_step)
+    """
+    if account_balance <= 0 or risk_pct <= 0:
+        return 0.0
+    if spec.tick_size <= 0 or spec.tick_value <= 0 or spec.volume_step <= 0:
+        log.warning(f"Especificación inválida para {spec.pair}: {spec}")
+        return 0.0
+
+    sl_distance = abs(entry_price - stop_loss_price)
+    if sl_distance < get_pip_size(spec.pair):
+        log.warning(f"Stop Loss demasiado ajustado (< 1 pip) en {spec.pair}.")
+        return 0.0
+
+    risk_amount = account_balance * (risk_pct / 100.0)
+    risk_per_lot = (sl_distance / spec.tick_size) * spec.tick_value
+    raw_lots = risk_amount / risk_per_lot
+
+    # floor al paso de volumen (con tolerancia para errores de coma flotante)
+    lots = math.floor(raw_lots / spec.volume_step + 1e-9) * spec.volume_step
+    lots = min(round(lots, 8), spec.volume_max)
+
+    if lots < spec.volume_min:
+        log.info(
+            f"{spec.pair}: el lote mínimo ({spec.volume_min}) arriesgaría más del {risk_pct}% "
+            f"(calculado {raw_lots:.4f} lotes). No se opera."
+        )
+        return 0.0
+    return lots
 
 
 def calculate_position_size(
@@ -24,57 +69,42 @@ def calculate_position_size(
     stop_loss_price: float,
     pair: str,
     max_leverage: float = 30.0,
-    min_units: int = 100,
+    min_units: int = 1,
+    quote_to_account_rate: Optional[float] = None,
 ) -> int:
     """
-    Calcula el tamaño de posición en unidades para no arriesgar más de `risk_pct`% del balance.
+    Versión en UNIDADES para cuentas en USD (usada por el backtester).
 
-    Fórmula:
-        Risk_Amount ($) = Account_Balance * (Risk_Pct / 100)
-        Stop_Loss_Distance = abs(Entry_Price - Stop_Loss_Price)
-        Units = Risk_Amount / Stop_Loss_Distance (ajustado por valor del pip y divisa)
+        Units = Riesgo_USD / (Distancia_SL * conversión_divisa_cotizada->USD)
+
+    Para cruces sin USD hay que pasar `quote_to_account_rate`; si no, retorna 0
+    en lugar de inventar un tamaño.
     """
     if account_balance <= 0:
         log.warning("Balance de cuenta inválido (<= 0).")
         return 0
-
     if entry_price <= 0 or stop_loss_price <= 0:
         log.warning("Precio de entrada o Stop Loss inválido (<= 0).")
         return 0
 
     price_diff = abs(entry_price - stop_loss_price)
-    if price_diff == 0:
-        log.warning("La distancia al Stop Loss es 0.")
+    if price_diff / get_pip_size(pair) < 1.0:
+        log.warning("Stop Loss demasiado ajustado (< 1 pip).")
         return 0
 
-    pip_size = get_pip_size(pair)
-    pips_at_risk = price_diff / pip_size
-    if pips_at_risk < 1.0:
-        log.warning(f"Stop Loss demasiado ajustado (< 1 pip): {pips_at_risk:.1f} pips.")
+    rate = quote_to_account_rate if quote_to_account_rate is not None else quote_to_usd_rate(pair, entry_price)
+    if rate is None:
+        log.warning(f"{pair}: falta el tipo de cambio de la divisa cotizada a USD; no se dimensiona.")
         return 0
 
     risk_amount_usd = account_balance * (risk_pct / 100.0)
+    units = int(risk_amount_usd / (price_diff * rate))
 
-    pair_clean = pair.upper().replace("/", "_")
-    if pair_clean.endswith("USD"):
-        units = risk_amount_usd / (pips_at_risk * pip_size)
-    elif pair_clean.startswith("USD"):
-        pip_val_per_unit = pip_size / entry_price
-        units = risk_amount_usd / (pips_at_risk * pip_val_per_unit)
-    else:
-        units = risk_amount_usd / price_diff
-
-    max_allowed_units = int((account_balance * max_leverage) / entry_price)
-    calculated_units = int(units)
-
-    final_units = min(calculated_units, max_allowed_units)
+    # Límite de apalancamiento: valor nocional en USD <= balance * apalancamiento
+    base_to_usd = entry_price * rate  # precio de 1 unidad de la divisa base en USD
+    max_allowed_units = int((account_balance * max_leverage) / base_to_usd) if base_to_usd > 0 else units
+    final_units = min(units, max_allowed_units)
 
     if final_units < min_units:
-        log.debug(f"Unidades calculadas ({final_units}) menores al mínimo ({min_units}). Asignando {min_units} unidades.")
-        return min_units
-
-    log.debug(
-        f"Position Sizing para {pair}: Balance=${account_balance:.2f} | Riesgo {risk_pct}% (${risk_amount_usd:.2f}) | "
-        f"SL Dist={pips_at_risk:.1f} pips -> Unidades: {final_units}"
-    )
+        return 0
     return final_units

@@ -64,6 +64,30 @@ def load_from_db(
     return pd.DataFrame()
 
 
+def load_from_mt5(pair: str = "EUR_USD", granularity: str = "M5", n_candles: int = 50000) -> pd.DataFrame:
+    """
+    Descarga historial real directamente desde el terminal MT5 (p.ej. tu cuenta XM).
+    Requiere Windows con el terminal abierto. Timestamps en UTC, solo velas cerradas.
+    """
+    from shared.mt5_client import MT5Client
+
+    client = MT5Client()
+    if not client.connect():
+        return pd.DataFrame()
+    try:
+        candles = client.get_latest_candles(pair=pair, granularity=granularity, count=n_candles)
+    finally:
+        client.disconnect()
+    if not candles:
+        return pd.DataFrame()
+    df = pd.DataFrame([c.model_dump() for c in candles])
+    df = df[["timestamp", "open", "high", "low", "close", "volume"]].set_index("timestamp")
+    df.index = pd.to_datetime(df.index, utc=True)
+    df["volume"] = df["volume"].astype(float)
+    log.info(f"Descargadas {len(df)} velas de {pair} {granularity} desde MT5.")
+    return df
+
+
 def load_from_csv(csv_path: str) -> pd.DataFrame:
     """Carga velas desde un archivo CSV."""
     df = pd.read_csv(csv_path)

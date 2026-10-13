@@ -1,13 +1,19 @@
 """
 Punto de entrada del servicio strategy-engine.
-Escucha eventos de nuevas velas en Redis o consulta periódicamente TimescaleDB,
-ejecuta las estrategias algorítmicas activas y publica las señales resultantes.
+Consume los eventos de velas cerradas que publica el data-collector, carga la
+historia desde TimescaleDB, ejecuta las estrategias activas y publica las señales.
+
+Cada vela se evalúa una sola vez por par: así una misma condición (p.ej. un
+cruce de medias) no genera señales repetidas.
 """
+import os
 import signal
 import sys
-import time
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import datetime
+from typing import Dict, Optional
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+
 import pandas as pd
 import psycopg2
 
@@ -31,28 +37,32 @@ def _handle_shutdown(signum, frame):
     running = False
 
 
-def load_recent_candles(pair: str, granularity: str, limit: int = 250) -> Optional[pd.DataFrame]:
+def load_recent_candles(pair: str, granularity: str, limit: int = 300) -> Optional[pd.DataFrame]:
     """
     Carga las últimas `limit` velas desde TimescaleDB para un par y granularidad.
     """
     try:
         conn = psycopg2.connect(settings.postgres_dsn)
-        query = """
-            SELECT timestamp, open, high, low, close, volume
-            FROM candles
-            WHERE pair = %s AND granularity = %s
-            ORDER BY timestamp DESC
-            LIMIT %s;
-        """
-        df = pd.read_sql_query(query, conn, params=(pair, granularity, limit))
-        conn.close()
+        try:
+            query = """
+                SELECT timestamp, open, high, low, close, volume
+                FROM candles
+                WHERE pair = %s AND granularity = %s AND complete
+                ORDER BY timestamp DESC
+                LIMIT %s;
+            """
+            with conn.cursor() as cur:
+                cur.execute(query, (pair, granularity, limit))
+                rows = cur.fetchall()
+        finally:
+            conn.close()
 
-        if df.empty:
+        if not rows:
             return None
 
         # Invertir para orden cronológico ascendente y setear timestamp como índice
-        df = df.iloc[::-1].reset_index(drop=True)
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = pd.DataFrame(rows[::-1], columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
         df.set_index("timestamp", inplace=True)
         for col in ["open", "high", "low", "close", "volume"]:
             df[col] = df[col].astype(float)
@@ -73,49 +83,47 @@ def main():
         MACrossoverStrategy(fast_period=9, slow_period=21, trend_period=200, use_trend_filter=True),
         MeanReversionStrategy(bb_period=20, bb_std=2.0, rsi_period=14, rsi_oversold=30.0, rsi_overbought=70.0),
     ]
+    history_needed = max(s.lookback_window for s in strategies)
 
-    publisher = SignalPublisher()
     bus = EventBus()
+    publisher = SignalPublisher(bus=bus)
 
-    # Canales a escuchar
     candle_channels = [f"{settings.channel_market_candle}:{pair}" for pair in settings.forex_pairs]
+    last_evaluated: Dict[str, datetime] = {}
 
     log.info(f"Estrategias activas: {[s.name for s in strategies]}")
     log.info(f"Monitoreando pares: {settings.forex_pairs}")
 
-    # Modo fallback si Redis no tiene mensajes o en bucle de evaluación
-    while running:
-        try:
-            for pair in settings.forex_pairs:
-                if not running:
-                    break
+    try:
+        for channel, data in bus.subscribe(*candle_channels, group="strategy-engine", should_stop=lambda: not running):
+            try:
+                candle = Candle(**data)
+            except Exception as parse_err:
+                log.warning(f"Vela inválida en '{channel}': {parse_err}")
+                continue
 
-                df = load_recent_candles(pair=pair, granularity=settings.candle_granularity, limit=250)
-                if df is None or len(df) < 30:
-                    continue
+            pair = candle.pair
+            if pair in last_evaluated and candle.timestamp <= last_evaluated[pair]:
+                continue  # vela ya evaluada
 
-                for strat in strategies:
-                    try:
-                        sig = strat.evaluate(df, pair=pair)
-                        if sig:
-                            log.info(f"🔥 Señal detectada por [{strat.name}] en {pair}: {sig.direction.value.upper()} SL={sig.stop_loss} TP={sig.take_profit}")
-                            publisher.publish(sig)
-                    except Exception as strat_err:
-                        log.error(f"Error ejecutando estrategia {strat.name} en {pair}: {strat_err}")
+            df = load_recent_candles(pair=pair, granularity=candle.granularity, limit=history_needed)
+            if df is None or df.index[-1] != pd.Timestamp(candle.timestamp):
+                log.warning(f"La BD aún no tiene la vela {candle.timestamp} de {pair}; se omite la evaluación.")
+                continue
+            last_evaluated[pair] = candle.timestamp
 
-            # Espera entre rondas de evaluación (sincronizada con el data collector)
-            for _ in range(settings.collector_poll_seconds):
-                if not running:
-                    break
-                time.sleep(1)
-
-        except Exception as e:
-            log.exception(f"Error en bucle de evaluación de estrategias: {e}")
-            time.sleep(5)
-
-    publisher.close()
-    bus.close()
-    log.info("Servicio strategy-engine finalizado correctamente.")
+            for strat in strategies:
+                try:
+                    sig = strat.evaluate(df.iloc[-strat.lookback_window:], pair=pair)
+                    if sig:
+                        log.info(f"🔥 Señal detectada por [{strat.name}] en {pair}: {sig.direction.value.upper()} SL={sig.stop_loss} TP={sig.take_profit}")
+                        publisher.publish(sig)
+                except Exception:
+                    log.exception(f"Error ejecutando estrategia {strat.name} en {pair}")
+    finally:
+        publisher.close()
+        bus.close()
+        log.info("Servicio strategy-engine finalizado correctamente.")
 
 
 if __name__ == "__main__":
