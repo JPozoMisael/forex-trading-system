@@ -1,12 +1,23 @@
 """
 Motor de Simulación de Backtesting orientada a eventos.
-Simula con fidelidad spreads, deslizamiento (slippage), comisiones, apalancamiento y reglas de salida SL/TP.
+
+Convenciones de ejecución (las mismas que se esperan en vivo):
+  - Las velas son precios MEDIOS (OANDA price="M"). Se compra al ask (medio +
+    medio spread) y se vende al bid (medio - medio spread): el spread completo
+    se paga entre la entrada y la salida.
+  - La señal se calcula con la vela i CERRADA y se ejecuta a la APERTURA de la
+    vela i+1. El SL/TP conservan la distancia que pidió la estrategia, medida
+    desde el precio real de entrada (igual que MT5Broker y SimulatedBroker).
+  - El slippage se paga en la entrada y en todas las salidas (SL, TP y cierre).
+  - Si en una misma vela se tocan el SL y el TP, se asume el SL.
+  - Comisión por lote estándar (100k unidades), ida y vuelta.
+  - Límite de pérdida diaria sobre la equity (incluye flotante), como el
+    circuit breaker del risk-manager: al alcanzarlo no se abren operaciones
+    nuevas hasta el siguiente día UTC.
 """
 from dataclasses import dataclass
-from datetime import datetime
 from typing import List, Dict, Any, Optional
 import pandas as pd
-import numpy as np
 
 import sys
 import os
@@ -19,7 +30,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from shared.models import Signal, SignalDirection, OrderSide
 from strategies.base_strategy import BaseStrategy
 from position_sizing import calculate_position_size, get_pip_size
-from shared.fx import quote_to_usd_rate
+from shared.fx import quote_to_usd_rate, STANDARD_LOT
 from metrics import BacktestMetrics, calculate_metrics
 
 
@@ -40,13 +51,19 @@ class BacktestEngine:
         risk_per_trade_pct: float = 1.0,
         spread_pips: float = 1.2,
         slippage_pips: float = 0.3,
-        commission_per_unit: float = 0.0,
+        commission_per_lot: float = 0.0,
+        max_daily_loss_pct: Optional[float] = None,
+        default_sl_pips: float = 20.0,
+        default_tp_pips: float = 40.0,
     ):
         self.initial_balance = initial_balance
         self.risk_per_trade_pct = risk_per_trade_pct
         self.spread_pips = spread_pips
         self.slippage_pips = slippage_pips
-        self.commission_per_unit = commission_per_unit
+        self.commission_per_lot = commission_per_lot  # USD por lote estándar, ida y vuelta
+        self.max_daily_loss_pct = max_daily_loss_pct  # None = sin límite
+        self.default_sl_pips = default_sl_pips
+        self.default_tp_pips = default_tp_pips
 
     def run(
         self,
@@ -63,158 +80,114 @@ class BacktestEngine:
             raise ValueError(f"{pair}: el backtester solo soporta pares con USD (XXX_USD o USD_XXX)")
 
         pip_size = get_pip_size(pair)
-        spread_cost = self.spread_pips * pip_size
-        slippage_cost = self.slippage_pips * pip_size
+        half_spread = self.spread_pips * pip_size / 2
+        slip = self.slippage_pips * pip_size
 
         balance = self.initial_balance
         equity_records = {}
         trades: List[Dict[str, Any]] = []
 
         active_trade: Optional[Dict[str, Any]] = None
+        pending_signal: Optional[Signal] = None
         min_bars = strategy.min_candles_required
 
-        for i in range(min_bars, len(df)):
-            current_bar = df.iloc[i]
-            bar_time = df.index[i]
-            o, h, l, c = current_bar["open"], current_bar["high"], current_bar["low"], current_bar["close"]
+        current_day = None
+        day_start_equity = balance
+        equity = balance
+        blocked_days = set()
 
-            # 1. Monitorear posición activa existente
-            if active_trade is not None:
-                side = active_trade["side"]
-                entry = active_trade["entry_price"]
-                sl = active_trade["stop_loss"]
-                tp = active_trade["take_profit"]
-                units = active_trade["units"]
-
-                closed = False
-                exit_price = c
-                exit_reason = "normal"
-
-                if side == OrderSide.BUY:
-                    if sl and l <= sl:
-                        closed = True
-                        exit_price = sl - slippage_cost
-                        exit_reason = "sl"
-                    elif tp and h >= tp:
-                        closed = True
-                        exit_price = tp
-                        exit_reason = "tp"
-                elif side == OrderSide.SELL:
-                    if sl and h >= sl:
-                        closed = True
-                        exit_price = sl + slippage_cost
-                        exit_reason = "sl"
-                    elif tp and l <= tp:
-                        closed = True
-                        exit_price = tp
-                        exit_reason = "tp"
-
-                if closed:
-                    diff = (exit_price - entry) if side == OrderSide.BUY else (entry - exit_price)
-                    pnl = diff * units * quote_to_usd_rate(pair, exit_price)  # en USD
-                    pips = diff / pip_size
-
-                    comm = units * self.commission_per_unit
-                    pnl -= comm
-                    balance += pnl
-
-                    trade_record = {
-                        "trade_id": len(trades) + 1,
-                        "pair": pair,
-                        "strategy": strategy.name,
-                        "side": side.value,
-                        "units": units,
-                        "entry_time": active_trade["entry_time"],
-                        "entry_price": entry,
-                        "exit_time": bar_time,
-                        "exit_price": round(exit_price, 5),
-                        "stop_loss": sl,
-                        "take_profit": tp,
-                        "pnl": round(pnl, 2),
-                        "pips": round(pips, 1),
-                        "roi_pct": round(pnl / active_trade["risk_usd"] * 100, 1) if active_trade["risk_usd"] else 0.0,
-                        "exit_reason": exit_reason,
-                        "balance_after": round(balance, 2),
-                    }
-                    trades.append(trade_record)
-                    active_trade = None
-
-            # 2. Evaluar nueva señal si no hay posición activa
-            if active_trade is None and balance > 100:
-                hist_slice = df.iloc[max(0, i + 1 - strategy.lookback_window): i + 1]
-                sig = strategy.evaluate(hist_slice, pair=pair)
-
-                if sig and sig.direction in (SignalDirection.BUY, SignalDirection.SELL):
-                    side = OrderSide.BUY if sig.direction == SignalDirection.BUY else OrderSide.SELL
-                    entry_price = c + (spread_cost / 2) + slippage_cost if side == OrderSide.BUY else c - (spread_cost / 2) - slippage_cost
-
-                    sl = sig.stop_loss
-                    tp = sig.take_profit
-
-                    # Si la estrategia no calculó SL/TP, usamos distancias por defecto
-                    if sl is None:
-                        sl = entry_price - (20 * pip_size) if side == OrderSide.BUY else entry_price + (20 * pip_size)
-                    if tp is None:
-                        tp = entry_price + (40 * pip_size) if side == OrderSide.BUY else entry_price - (40 * pip_size)
-
-                    units = calculate_position_size(
-                        account_balance=balance,
-                        risk_pct=self.risk_per_trade_pct,
-                        entry_price=entry_price,
-                        stop_loss_price=sl,
-                        pair=pair,
-                    )
-
-                    if units > 0:
-                        active_trade = {
-                            "side": side,
-                            "units": units,
-                            "risk_usd": abs(entry_price - sl) * units * quote_to_usd_rate(pair, entry_price),
-                            "entry_price": round(entry_price, 5),
-                            "entry_time": bar_time,
-                            "stop_loss": sl,
-                            "take_profit": tp,
-                        }
-
-            # 3. Registrar equity flotante
-            current_floating_pnl = 0.0
-            if active_trade is not None:
-                if active_trade["side"] == OrderSide.BUY:
-                    current_floating_pnl = (c - active_trade["entry_price"]) * active_trade["units"]
-                else:
-                    current_floating_pnl = (active_trade["entry_price"] - c) * active_trade["units"]
-                current_floating_pnl *= quote_to_usd_rate(pair, c)
-
-            equity_records[bar_time] = balance + current_floating_pnl
-
-        # Cerrar posición residual al final del periodo si quedó abierta
-        if active_trade is not None:
-            c = df.iloc[-1]["close"]
-            diff = (c - active_trade["entry_price"]) if active_trade["side"] == OrderSide.BUY else (active_trade["entry_price"] - c)
-            pnl = diff * active_trade["units"] * quote_to_usd_rate(pair, c)
-            pips = diff / pip_size
-
+        def close_trade(trade: Dict[str, Any], exit_price: float, exit_time, reason: str):
+            nonlocal balance
+            is_buy = trade["side"] == OrderSide.BUY
+            diff = (exit_price - trade["entry_price"]) if is_buy else (trade["entry_price"] - exit_price)
+            gross = diff * trade["units"] * quote_to_usd_rate(pair, exit_price)  # en USD
+            comm = trade["units"] / STANDARD_LOT * self.commission_per_lot
+            pnl = gross - comm
             balance += pnl
             trades.append(
                 {
                     "trade_id": len(trades) + 1,
                     "pair": pair,
                     "strategy": strategy.name,
-                    "side": active_trade["side"].value,
-                    "units": active_trade["units"],
-                    "entry_time": active_trade["entry_time"],
-                    "entry_price": active_trade["entry_price"],
-                    "exit_time": df.index[-1],
-                    "exit_price": round(c, 5),
-                    "stop_loss": active_trade["stop_loss"],
-                    "take_profit": active_trade["take_profit"],
+                    "side": trade["side"].value,
+                    "units": trade["units"],
+                    "signal_time": trade["signal_time"],
+                    "entry_time": trade["entry_time"],
+                    "entry_price": round(trade["entry_price"], 5),
+                    "exit_time": exit_time,
+                    "exit_price": round(exit_price, 5),
+                    "stop_loss": round(trade["stop_loss"], 5),
+                    "take_profit": round(trade["take_profit"], 5),
+                    "commission": round(comm, 2),
                     "pnl": round(pnl, 2),
-                    "pips": round(pips, 1),
-                    "roi_pct": 0.0,
-                    "exit_reason": "end_of_data",
+                    "pips": round(diff / pip_size, 1),
+                    "roi_pct": round(pnl / trade["risk_usd"] * 100, 1) if trade["risk_usd"] else 0.0,
+                    "exit_reason": reason,
                     "balance_after": round(balance, 2),
                 }
             )
+
+        for i in range(min_bars, len(df)):
+            bar_time = df.index[i]
+            o, h, l, c = (float(df[k].iloc[i]) for k in ("open", "high", "low", "close"))
+
+            # 0. Cambio de día UTC: la equity al cierre previo es la base del límite diario
+            day = bar_time.date() if hasattr(bar_time, "date") else None
+            if day != current_day:
+                current_day = day
+                day_start_equity = equity
+
+            # 1. Ejecutar la señal de la vela anterior a la apertura de esta vela
+            if pending_signal is not None:
+                trade = self._open_trade(pending_signal, o, bar_time, balance, pair, pip_size, half_spread, slip)
+                if trade is not None:
+                    active_trade = trade
+                pending_signal = None
+
+            # 2. Monitorear posición activa (incluida la recién abierta: el rango de
+            #    la vela ocurre después de la apertura)
+            if active_trade is not None:
+                exit_price, reason = self._check_exit(active_trade, o, h, l, half_spread, slip)
+                if reason is not None:
+                    close_trade(active_trade, exit_price, bar_time, reason)
+                    active_trade = None
+
+            # 3. Equity al cierre (flotante valuada al precio al que se cerraría)
+            floating = 0.0
+            if active_trade is not None:
+                if active_trade["side"] == OrderSide.BUY:
+                    floating = (c - half_spread - active_trade["entry_price"]) * active_trade["units"]
+                else:
+                    floating = (active_trade["entry_price"] - (c + half_spread)) * active_trade["units"]
+                floating *= quote_to_usd_rate(pair, c)
+            equity = balance + floating
+            equity_records[bar_time] = equity
+
+            # 4. Límite de pérdida diaria (como el circuit breaker en vivo)
+            daily_blocked = False
+            if self.max_daily_loss_pct is not None and day_start_equity > 0:
+                daily_loss_pct = max(0.0, day_start_equity - equity) / day_start_equity * 100.0
+                if daily_loss_pct >= self.max_daily_loss_pct:
+                    daily_blocked = True
+                    blocked_days.add(current_day)
+            daily_blocked = daily_blocked or current_day in blocked_days
+
+            # 5. Evaluar nueva señal con la vela i cerrada; se ejecuta en i+1
+            if active_trade is None and not daily_blocked and balance > 100 and i + 1 < len(df):
+                hist_slice = df.iloc[max(0, i + 1 - strategy.lookback_window): i + 1]
+                sig = strategy.evaluate(hist_slice, pair=pair)
+                if sig and sig.direction in (SignalDirection.BUY, SignalDirection.SELL):
+                    pending_signal = sig
+
+        # Cerrar posición residual al final del periodo si quedó abierta
+        if active_trade is not None:
+            c = float(df["close"].iloc[-1])
+            if active_trade["side"] == OrderSide.BUY:
+                exit_price = c - half_spread - slip
+            else:
+                exit_price = c + half_spread + slip
+            close_trade(active_trade, exit_price, df.index[-1], "end_of_data")
+            equity_records[df.index[-1]] = balance
 
         equity_series = pd.Series(equity_records, name="Equity")
         metrics = calculate_metrics(trades, equity_series, initial_balance=self.initial_balance)
@@ -228,3 +201,67 @@ class BacktestEngine:
             equity_series=equity_series,
             trades_df=trades_df,
         )
+
+    def _open_trade(
+        self,
+        sig: Signal,
+        open_price: float,
+        bar_time,
+        balance: float,
+        pair: str,
+        pip_size: float,
+        half_spread: float,
+        slip: float,
+    ) -> Optional[Dict[str, Any]]:
+        side = OrderSide.BUY if sig.direction == SignalDirection.BUY else OrderSide.SELL
+        is_buy = side == OrderSide.BUY
+        entry_price = open_price + half_spread + slip if is_buy else open_price - half_spread - slip
+
+        # Distancias pedidas por la estrategia, medidas desde su precio de referencia
+        ref = sig.entry_price or open_price
+        sl_dist = abs(ref - sig.stop_loss) if sig.stop_loss else self.default_sl_pips * pip_size
+        tp_dist = abs(sig.take_profit - ref) if sig.take_profit else self.default_tp_pips * pip_size
+        sl = entry_price - sl_dist if is_buy else entry_price + sl_dist
+        tp = entry_price + tp_dist if is_buy else entry_price - tp_dist
+
+        units = calculate_position_size(
+            account_balance=balance,
+            risk_pct=self.risk_per_trade_pct,
+            entry_price=entry_price,
+            stop_loss_price=sl,
+            pair=pair,
+        )
+        if units <= 0:
+            return None
+        return {
+            "side": side,
+            "units": units,
+            "risk_usd": sl_dist * units * quote_to_usd_rate(pair, entry_price),
+            "entry_price": entry_price,
+            "signal_time": sig.timestamp,
+            "entry_time": bar_time,
+            "stop_loss": sl,
+            "take_profit": tp,
+        }
+
+    @staticmethod
+    def _check_exit(trade: Dict[str, Any], o: float, h: float, l: float, half_spread: float, slip: float):
+        """
+        Retorna (precio_salida, motivo) o (None, None). Un BUY cierra al bid
+        (medio - medio spread) y un SELL al ask (medio + medio spread). Si la
+        apertura ya salta el SL (gap), se llena a la apertura. SL tiene prioridad.
+        """
+        sl, tp = trade["stop_loss"], trade["take_profit"]
+        if trade["side"] == OrderSide.BUY:
+            bid_o, bid_h, bid_l = o - half_spread, h - half_spread, l - half_spread
+            if bid_l <= sl:
+                return min(sl, bid_o) - slip, "sl"
+            if bid_h >= tp:
+                return tp - slip, "tp"
+        else:
+            ask_o, ask_h, ask_l = o + half_spread, h + half_spread, l + half_spread
+            if ask_h >= sl:
+                return max(sl, ask_o) + slip, "sl"
+            if ask_l <= tp:
+                return tp + slip, "tp"
+        return None, None

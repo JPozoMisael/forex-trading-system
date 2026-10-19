@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from data_loader import load_from_db, load_from_csv, load_from_mt5, generate_synthetic_forex_data
 from engine import BacktestEngine
+from shared.config import settings
 from strategies.ma_crossover import MACrossoverStrategy
 from strategies.mean_reversion import MeanReversionStrategy
 
@@ -44,6 +45,14 @@ def main():
     parser.add_argument("--capital", type=float, default=10000.0, help="Capital inicial en USD")
     parser.add_argument("--risk", type=float, default=1.0, help="Riesgo porcentual por operación (%)")
     parser.add_argument("--spread", type=float, default=1.2, help="Spread simulado en pips")
+    parser.add_argument("--slippage", type=float, default=0.3, help="Slippage por ejecución en pips (entrada y salida)")
+    parser.add_argument("--commission", type=float, default=0.0, help="Comisión en USD por lote estándar, ida y vuelta")
+    parser.add_argument(
+        "--max-daily-loss",
+        type=float,
+        default=settings.max_daily_drawdown_pct,
+        help="Límite de pérdida diaria en %% de equity (igual que MAX_DAILY_DRAWDOWN_PCT en vivo)",
+    )
     parser.add_argument("--candles", type=int, default=20000, help="Cantidad de velas para la prueba")
     parser.add_argument("--granularity", type=str, default="M5", help="Temporalidad (M1, M5, M15, H1, H4, D1)")
     parser.add_argument(
@@ -86,13 +95,19 @@ def main():
         strategy = MeanReversionStrategy(bb_period=20, bb_std=2.0, rsi_period=14)
 
     print(f"[>] Estrategia: {strategy.name}")
-    print(f"[>] Capital: ${args.capital:,.2f} | Riesgo: {args.risk}% | Spread: {args.spread} pips\n")
+    print(
+        f"[>] Capital: ${args.capital:,.2f} | Riesgo: {args.risk}% | Spread: {args.spread} pips | "
+        f"Slippage: {args.slippage} pips | Comisión: ${args.commission}/lote | Pérdida diaria máx: {args.max_daily_loss}%\n"
+    )
 
     # 3. Ejecutar Backtest
     engine = BacktestEngine(
         initial_balance=args.capital,
         risk_per_trade_pct=args.risk,
         spread_pips=args.spread,
+        slippage_pips=args.slippage,
+        commission_per_lot=args.commission,
+        max_daily_loss_pct=args.max_daily_loss,
     )
 
     result = engine.run(strategy=strategy, df=df, pair=args.pair)
