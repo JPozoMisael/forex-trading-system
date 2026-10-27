@@ -12,7 +12,9 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 - Con las 1000 velas que lee de la BD, la probabilidad es **idéntica** a la calculada con toda la historia (diferencia 0 en 200 velas): en vivo decide lo mismo que en el backtest.
 - El modelo solo opera su par y temporalidad (`supports()`); avisa en el log si `FOREX_PAIRS`/`CANDLE_GRANULARITY` no coinciden con `config.yaml`.
 - Dockerfile: `libgomp1` (LightGBM), `config.yaml` y dependencias del modelo. 100 tests pasan.
-- **Siguiente paso:** push + *Redeploy*; revisar en los logs `Modelo entrenado ...` y, en cada hora, `Vela cerrada`. Dejarlo correr semanas (con `DRY_RUN=true`) y comparar sus operaciones con el backtest.
+- Arreglo `96e67f8`: `_get_list` pasaba `ml` a mayúsculas y el strategy-engine se caía con "Estrategia desconocida 'ML'".
+- **Verificado en Dokploy (21:34 UTC):** el modelo se entrenó en ~42 s con las mismas 96.661 muestras (2011-11-07 a 2026-10-23), `Estrategias activas: ['ML_LightGBM']`, data-collector con Dukascopy y monitoring `UP` (PG, Redis y Broker healthy).
+- **Siguiente paso:** dejarlo correr semanas con `DRY_RUN=true` (unas 25 señales al año, así que pueden pasar días sin ninguna) y después comparar sus operaciones (tabla `orders`) con lo que da el backtest en las mismas fechas.
 
 ## 2026-10-27 (paso 2: Dukascopy en el pipeline desplegado) · DESKTOP-RC7UDV1
 
