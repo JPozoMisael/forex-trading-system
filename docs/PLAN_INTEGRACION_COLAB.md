@@ -55,7 +55,7 @@ Cada fase se cierra con tests verdes y una entrada en [BITACORA.md](BITACORA.md)
 
 1. ✅ **Traer la fuente**: el script completo está en `research/colab/` (2026-10-26).
 2. ✅ **Costos y ejecución realistas** en el backtester (2026-10-27, `9ddf2bf`): spread completo, slippage en todas las salidas, comisión, entrada a la apertura siguiente, SL si SL y TP caen en la misma vela, límite de pérdida diaria. *Pendiente:* tabla de spread y slippage por símbolo (va con la fase 7).
-3. **Datos** en `data/` como parquet: `--source oanda` (≥ 5 años de H1, precio `M`) es la fuente única para entrenar, hacer backtest y paper trading. `--source dukascopy` queda como respaldo si OANDA falla.
+3. ✅ **Datos** (2026-10-27): Dukascopy es la fuente única para entrenar, hacer backtest y paper trading, porque OANDA no acepta clientes de Ecuador. Precio medio desde bid/ask, caché en `data/` como parquet, `scripts/descargar_datos.py`. EUR_USD H1 desde 2020-10.
 4. **Validación** → `backtesting/src/validation.py`, sirve para cualquier `BaseStrategy`:
    - **Walk-forward** por ventanas, con un hueco entre entrenamiento y prueba igual al horizonte del modelo.
    - Del Colab: **test de permutación**, **intervalo de confianza por bootstrap** y **veredicto** (`VENTAJA CON EVIDENCIA` / `SOLO DEMO`).
@@ -65,14 +65,14 @@ Cada fase se cierra con tests verdes y una entrada en [BITACORA.md](BITACORA.md)
    - Target de **triple barrera**: ¿toca primero el TP o el SL (en múltiplos de ATR) dentro de N velas?
    - LightGBM, que solo opera si la probabilidad supera un umbral configurable.
 6. **Informe** → `backtesting/src/report.py`: curva de equity (PNG) y tabla de métricas por ventana en `reports/`. El PDF con `reportlab` viene después.
-7. **Paper trading** independiente: script con OANDA demo, sin Docker, con log en archivos. `config.yaml` (par, temporalidad, modelo, riesgo, costos) cargado desde `shared/config.py`; claves solo en `.env`. Pipeline en un comando (entrenar → validar → señales) y README.
+7. **Paper trading** independiente: script con datos de Dukascopy, sin Docker, con órdenes simuladas y log en archivos. `config.yaml` (par, temporalidad, modelo, riesgo, costos) cargado desde `shared/config.py`; claves solo en `.env`. Pipeline en un comando (entrenar → validar → señales) y README.
 
 **Después del MVP**
 
 8. **Generalizar símbolos** (P5): pip y contrato por símbolo para XAUUSD y BTCUSD, en `shared/fx.py`.
 9. **Estrategia SMC** como `BaseStrategy` (modo `confirmacion` primero, que es a mercado y encaja con el pipeline actual). Pasa por la misma validación que el modelo; se activa en vivo **solo** si da `VENTAJA CON EVIDENCIA`.
 10. **Guardar validaciones en la BD** (`backtest_runs`, `backtest_trades`), además de en `reports/`.
-11. **`OandaBroker`** (P1), para operar la cuenta demo de OANDA desde el pipeline de microservicios.
+11. **Fuente Dukascopy en el pipeline** (P10): `MARKET_DATA_PROVIDER=dukascopy` en el data-collector, para que el sistema desplegado en Dokploy tenga datos. Para órdenes en una cuenta demo real: XM (MT5), si acepta Ecuador.
 12. **Órdenes limitadas** (`limite`, `fibo`): requieren soportar órdenes pendientes en `Broker`, `order_manager` y reconciliación. Es el cambio más grande, así que se deja para el final.
 13. **Grafana**: paneles con las métricas de validación y la equity de la cartera aprobada.
 14. **Informe diario automático**: a la apertura de Londres, generar el PDF (análisis por activo, órdenes y veredicto) y enviarlo por Telegram desde `monitoring`. Así lo que hoy se hace a mano en Colab queda programado.

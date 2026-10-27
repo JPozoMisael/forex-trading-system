@@ -5,6 +5,16 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-27 (tarde) · DESKTOP-RC7UDV1
+
+- **OANDA no acepta clientes de Ecuador** (la solicitud de cuenta redirige a FTMO). Se descarta como fuente y como broker.
+- **Fase 3 hecha, datos de Dukascopy** (gratis, sin cuenta): `load_from_dukascopy()` en `backtesting/src/data_loader.py`. Calcula el precio medio desde bid/ask (convención del backtester), guarda el spread real por vela, solo velas cerradas y caché incremental en `data/dukascopy_<PAR>_<TF>.parquet`.
+  - `python scripts/descargar_datos.py` descarga y revisa la calidad. EUR_USD H1: 37.416 velas (2020-10-27 → hoy) en 26 s. Los únicos huecos son Navidad y Año Nuevo.
+  - `run_backtest.py` usa `--source dukascopy --granularity H1` por defecto.
+- **Línea base real:** `ma_crossover` en 6 años de EUR_USD H1 con spread 1.0 + slippage 0.3 + comisión $7/lote: **−66.9 %**, profit factor 0.82, 788 operaciones. No tiene ventaja.
+- Dokploy: los servicios caen porque `REDIS_HOST=redis` no existe (crear el servicio Redis en el proyecto y usar su *Internal Host* + `REDIS_PASSWORD`) y porque las credenciales de OANDA eran el texto de ejemplo. Aunque se arregle Redis, el data-collector no tendrá fuente hasta implementar `MARKET_DATA_PROVIDER=dukascopy` (P10). Mientras tanto, dejar la aplicación detenida.
+- **Siguiente paso:** fase 4 (`validation.py`, walk-forward + permutación + bootstrap) y fase 5 (`MLStrategy`).
+
 ## 2026-10-27 · DESKTOP-RC7UDV1
 
 - **Backtester con costos y ejecución realistas** (`backtesting/src/engine.py`, commit `9ddf2bf`): spread completo (compra al ask, vende al bid sobre velas de precio medio), slippage en entrada y en todas las salidas, comisión por lote, entrada a la **apertura de la vela siguiente** a la señal, SL si SL y TP caen en la misma vela (un gap llena a la apertura) y límite de pérdida diaria igual que el circuit breaker en vivo. CLI: `--slippage`, `--commission`, `--max-daily-loss`. Un test por regla en `tests/test_backtester_execution.py` (62 tests pasan).

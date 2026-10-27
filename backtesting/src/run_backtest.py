@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from data_loader import load_from_db, load_from_csv, load_from_mt5, generate_synthetic_forex_data
+from data_loader import load_from_db, load_from_csv, load_from_dukascopy, load_from_mt5, generate_synthetic_forex_data
 from engine import BacktestEngine
 from shared.config import settings
 from strategies.ma_crossover import MACrossoverStrategy
@@ -54,13 +54,14 @@ def main():
         help="Límite de pérdida diaria en %% de equity (igual que MAX_DAILY_DRAWDOWN_PCT en vivo)",
     )
     parser.add_argument("--candles", type=int, default=20000, help="Cantidad de velas para la prueba")
-    parser.add_argument("--granularity", type=str, default="M5", help="Temporalidad (M1, M5, M15, H1, H4, D1)")
+    parser.add_argument("--granularity", type=str, default="H1", help="Temporalidad (M1, M5, M15, H1, H4, D1)")
     parser.add_argument(
         "--source",
         type=str,
-        default="mt5",
-        choices=["mt5", "db", "csv", "synthetic"],
-        help="Origen de datos: mt5 (historial real de tu terminal XM), db, csv o synthetic (solo para pruebas del código)",
+        default="dukascopy",
+        choices=["dukascopy", "mt5", "db", "csv", "synthetic"],
+        help="Origen de datos: dukascopy (caché en data/, se actualiza sola), mt5 (terminal XM), db, csv "
+        "o synthetic (solo para pruebas del código)",
     )
     parser.add_argument("--csv", type=str, default=None, help="Ruta al archivo CSV (con --source csv)")
 
@@ -69,7 +70,10 @@ def main():
 
     # 1. Cargar Datos (nunca se cae en silencio a datos sintéticos: los resultados
     #    sobre ruido aleatorio no dicen nada de la estrategia)
-    if args.source == "csv":
+    if args.source == "dukascopy":
+        print(f"[+] Cargando {args.pair} {args.granularity} de Dukascopy (caché en data/)...")
+        df = load_from_dukascopy(pair=args.pair, granularity=args.granularity).tail(args.candles)
+    elif args.source == "csv":
         if not args.csv or not os.path.exists(args.csv):
             sys.exit("[x] Usa --csv con la ruta a un archivo existente.")
         df = load_from_csv(args.csv)

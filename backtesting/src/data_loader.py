@@ -1,8 +1,11 @@
 """
 Cargador de datos históricos para Backtesting y Análisis Cuantitativo.
-Soporta TimescaleDB, archivos CSV y generación de datos sintéticos realistas.
+Soporta Dukascopy (fuente principal, con caché parquet en data/), MT5,
+TimescaleDB, archivos CSV y generación de datos sintéticos.
 """
+import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 import numpy as np
 import pandas as pd
@@ -12,10 +15,107 @@ try:
 except ImportError:
     psycopg2 = None
 
-from shared.config import settings
+from shared.config import GRANULARITY_MINUTES, settings
+from shared.fx import get_pip_size, normalize_pair
 from shared.logger import get_logger
 
 log = get_logger(__name__)
+
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+# Granularidad del sistema -> constante de dukascopy-python
+_DUKASCOPY_INTERVALS = {
+    "M1": "INTERVAL_MIN_1", "M5": "INTERVAL_MIN_5", "M15": "INTERVAL_MIN_15", "M30": "INTERVAL_MIN_30",
+    "H1": "INTERVAL_HOUR_1", "H4": "INTERVAL_HOUR_4", "D": "INTERVAL_DAY_1", "D1": "INTERVAL_DAY_1",
+}
+
+
+def dukascopy_cache_path(pair: str, granularity: str, data_dir: Path = DATA_DIR) -> Path:
+    return Path(data_dir) / f"dukascopy_{normalize_pair(pair)}_{granularity.upper()}.parquet"
+
+
+def _fetch_dukascopy_mid(pair: str, granularity: str, start: datetime, end: datetime) -> pd.DataFrame:
+    """
+    Descarga bid y ask de Dukascopy y devuelve velas de precio MEDIO (como
+    OANDA price="M"), que es la convención del backtester. Guarda además el
+    spread real al cierre de cada vela en pips. Una llamada por año: la
+    librería devuelve como máximo 30.000 velas por petición.
+    """
+    import dukascopy_python as dk
+
+    logging.getLogger("DUKASCRIPT").setLevel(logging.WARNING)
+    instrument = normalize_pair(pair).replace("_", "/")
+    interval = getattr(dk, _DUKASCOPY_INTERVALS[granularity.upper()])
+
+    frames = []
+    chunk_start = start
+    while chunk_start < end:
+        chunk_end = min(end, chunk_start + timedelta(days=365))
+        sides = {}
+        for name, side in (("bid", dk.OFFER_SIDE_BID), ("ask", dk.OFFER_SIDE_ASK)):
+            sides[name] = dk.fetch(instrument, interval, side, chunk_start, chunk_end)
+        bid, ask = sides["bid"], sides["ask"]
+        if not bid.empty and not ask.empty:
+            ask = ask.reindex(bid.index)
+            mid = (bid[["open", "high", "low", "close"]] + ask[["open", "high", "low", "close"]]) / 2
+            mid["volume"] = bid["volume"].astype(float)
+            mid["spread_pips"] = (ask["close"] - bid["close"]) / get_pip_size(pair)
+            frames.append(mid.dropna())
+            log.info(f"Dukascopy {pair} {granularity}: {len(mid)} velas de {chunk_start:%Y-%m-%d} a {chunk_end:%Y-%m-%d}")
+        chunk_start = chunk_end
+
+    if not frames:
+        return pd.DataFrame()
+    df = pd.concat(frames)
+    df.index = pd.to_datetime(df.index, utc=True)
+    df.index.name = "timestamp"
+    return df
+
+
+def load_from_dukascopy(
+    pair: str = "EUR_USD",
+    granularity: str = "H1",
+    years: float = 6.0,
+    refresh: bool = True,
+    data_dir: Path = DATA_DIR,
+    now: Optional[datetime] = None,
+) -> pd.DataFrame:
+    """
+    Velas de precio medio de Dukascopy con caché en data/ (parquet).
+
+    La primera vez descarga `years` años; después solo baja lo que falta desde
+    la última vela guardada (refresh=False usa la caché sin conectarse).
+    Solo devuelve velas CERRADAS: la vela en formación nunca se guarda.
+    """
+    granularity = granularity.upper()
+    if granularity not in _DUKASCOPY_INTERVALS:
+        raise ValueError(f"Granularidad '{granularity}' no soportada por Dukascopy: {sorted(_DUKASCOPY_INTERVALS)}")
+    now = now or datetime.now(timezone.utc)
+    path = dukascopy_cache_path(pair, granularity, data_dir)
+
+    cached = pd.read_parquet(path) if path.exists() else pd.DataFrame()
+    if not refresh:
+        return cached
+
+    if cached.empty:
+        start = now - timedelta(days=365.25 * years)
+    else:
+        # Se vuelve a pedir la última vela guardada por si quedó a medio consolidar.
+        start = cached.index[-1].to_pydatetime()
+    fresh = _fetch_dukascopy_mid(pair, granularity, start, now)
+
+    df = pd.concat([cached, fresh]) if not cached.empty else fresh
+    if df.empty:
+        return df
+    df = df[~df.index.duplicated(keep="last")].sort_index()
+
+    bar = pd.Timedelta(minutes=GRANULARITY_MINUTES[granularity])
+    df = df[df.index + bar <= pd.Timestamp(now)]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(path)
+    log.info(f"Caché {path.name}: {len(df)} velas [{df.index[0]} a {df.index[-1]}]")
+    return df
 
 
 def load_from_db(
