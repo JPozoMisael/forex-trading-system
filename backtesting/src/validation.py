@@ -105,7 +105,8 @@ def make_windows(index: pd.DatetimeIndex, initial_train_years: float, test_month
     primer dato. Un sobrante final de menos de un mes se une a la última ventana.
     """
     first, end = index[0], index[-1] + pd.Timedelta(seconds=1)
-    test_start = first + pd.DateOffset(years=initial_train_years)
+    # En meses: DateOffset no acepta años fraccionarios (p.ej. 2.5 en config.yaml)
+    test_start = first + pd.DateOffset(months=max(1, int(round(initial_train_years * 12))))
     windows = []
     while test_start < end:
         test_end = min(test_start + pd.DateOffset(months=test_months), end)

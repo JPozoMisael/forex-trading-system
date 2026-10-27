@@ -12,6 +12,9 @@ data/
 .coverage
 .pytest_cache/
 reports/
+# Modelos entrenados y logs del paper trading (se regeneran con pipeline.py)
+models/
+logs/
 # Salidas del script de Colab (research/colab)
 sistema/
 datos_bt/

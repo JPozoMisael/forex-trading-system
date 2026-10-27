@@ -25,6 +25,7 @@ from shared.config import load_trading_config
 from strategies.ma_crossover import MACrossoverStrategy
 from strategies.mean_reversion import MeanReversionStrategy
 from strategies.ml_strategy import MLStrategy
+from report import write_report
 from validation import ValidationReport, Window, validate
 
 RULE_STRATEGIES = {
@@ -97,20 +98,30 @@ def print_report(report: ValidationReport):
         print(f"      {v.explanation}")
 
 
+DISPLAY_NAMES = {"ml": "Modelo ML", "ma_crossover": "Cruce EMAs", "mean_reversion": "Bollinger+RSI"}
+
+
+def run(strategies, refresh_data: bool = True):
+    """Valida, imprime el resumen y escribe el informe. Devuelve (report, carpeta del informe)."""
+    cfg = load_trading_config()
+    pair, gran = cfg["mercado"]["par"], cfg["mercado"]["temporalidad"]
+    df = load_from_dukascopy(pair, gran, years=cfg["mercado"]["anios_historia"], refresh=refresh_data)
+    print(f"[v] {pair} {gran}: {len(df)} velas [{df.index[0]:%Y-%m-%d} a {df.index[-1]:%Y-%m-%d}]")
+
+    factories = build_factories(strategies, df, cfg, pair)
+    report = validate(df, factories, pair, gran, cfg)
+    print_report(report)
+    out_dir = write_report(report, DISPLAY_NAMES, main_strategy="ml" if "ml" in strategies else None)
+    print(f"\n[v] Informe: {out_dir / 'informe.md'} (gráfico: equity.png)")
+    return report, out_dir
+
+
 def main():
     parser = argparse.ArgumentParser(description="Validación walk-forward fuera de muestra")
     parser.add_argument("--strategies", default="ml,ma_crossover",
                         help=f"Separadas por coma: ml, {', '.join(RULE_STRATEGIES)}")
     args = parser.parse_args()
-
-    cfg = load_trading_config()
-    pair, gran = cfg["mercado"]["par"], cfg["mercado"]["temporalidad"]
-    df = load_from_dukascopy(pair, gran, years=cfg["mercado"]["anios_historia"])
-    print(f"[v] {pair} {gran}: {len(df)} velas [{df.index[0]:%Y-%m-%d} a {df.index[-1]:%Y-%m-%d}]")
-
-    factories = build_factories(args.strategies.split(","), df, cfg, pair)
-    report = validate(df, factories, pair, gran, cfg)
-    print_report(report)
+    run(args.strategies.split(","))
 
 
 if __name__ == "__main__":
