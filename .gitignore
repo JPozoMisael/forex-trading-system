@@ -9,3 +9,10 @@ venv/
 .DS_Store
 data/
 *.sqlite3
+.coverage
+.pytest_cache/
+reports/
+# Salidas del script de Colab (research/colab)
+sistema/
+datos_bt/
+mt5/
