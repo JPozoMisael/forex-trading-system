@@ -5,10 +5,16 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-27 (arreglo: reporte repetido cada minuto) · DESKTOP-RC7UDV1
+
+- **Fallo:** el turno enviado se guardaba en Redis como string suelto (`set_json` no lo codifica en JSON) y `get_json` no podía leerlo, así que el reporte salía en cada chequeo (cada minuto). Ahora se guarda `{"turno": ...}`. Un test simula 8 h de chequeos con fakeredis y exige exactamente dos envíos.
+- Los reportes salen **antes de cada sesión**: `REPORT_TIMES_UTC=06:30,13:00` (1:30 y 8:00 en Ecuador), de lunes a viernes. Si el servicio estuvo caído a esa hora, solo se recupera dentro de 2 h.
+- **Pedido del usuario: más pares y oro (XAU/USD).** Hoy solo hay modelo para EUR_USD H1. Cada instrumento necesita su propio modelo validado con el mismo protocolo. El oro requiere además generalizar pip y contrato (P5).
+
 ## 2026-10-27 (avisos de fallo y reporte diario) · DESKTOP-RC7UDV1
 
 - **Avisos de fallo** (`services/monitoring/src/health_check.py`): además de BD, Redis y cuenta, avisa si no llegan velas nuevas (solo con el mercado abierto, dom 22:00 → vie 21:00 UTC) o si el strategy-engine no evalúa la última vela (latido en Redis `state:strategy:<PAR>`). Avisa por email y Telegram solo si el fallo dura 3 chequeos seguidos (un redeploy no genera alertas), y una vez al recuperarse.
-- **Reporte diario** (`daily_report.py`), de lunes a viernes a las `DAILY_REPORT_HOUR_UTC` (12 = 7:00 Ecuador):
+- **Reporte diario** (`daily_report.py`), de lunes a viernes (horarios en `REPORT_TIMES_UTC`, ver arreglo de arriba):
   - estado del sistema y probabilidades del modelo en la última vela;
   - cuenta simulada, operaciones de 24 h y acumulado frente al backtest;
   - gráfico con EMA 50/200, Fibonacci del último movimiento, sesiones de Londres y Nueva York, y posición abierta con SL/TP.

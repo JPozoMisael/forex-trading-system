@@ -11,8 +11,8 @@ import pandas as pd
 import pytest
 
 from data_loader import generate_synthetic_forex_data
-from daily_report import (ReportData, active_sessions, build_report, fibonacci_levels, plot_chart, should_send,
-                          trade_stats)
+from daily_report import (ReportData, active_sessions, build_report, due_slot, fibonacci_levels, plot_chart,
+                          trade_stats, upcoming_sessions)
 from health_check import candle_status, failure_message, market_open, overall_status, strategy_status
 
 UTC = timezone.utc
@@ -86,12 +86,37 @@ def test_alerts_only_after_three_failed_checks_and_once_on_recovery():
 
 # ------------------------------------------------------------- reporte
 
-def test_report_schedule():
-    assert should_send(TUESDAY, None, 12)
-    assert not should_send(TUESDAY, "2026-10-27", 12)                       # ya enviado hoy
-    assert not should_send(TUESDAY.replace(hour=11), None, 12)              # todavía no es la hora
-    assert not should_send(datetime(2026, 10, 31, 13, tzinfo=UTC), None, 12)  # sábado
-    assert should_send(TUESDAY, "2026-10-26", 12)                           # recupera si estuvo caído a esa hora
+TIMES = ["06:30", "13:00"]
+
+
+def test_report_slots_before_london_and_new_york():
+    at = lambda h, m: datetime(2026, 10, 27, h, m, tzinfo=UTC)
+    assert due_slot(at(6, 29), None, TIMES) is None
+    assert due_slot(at(6, 30), None, TIMES) == "2026-10-27 06:30"
+    assert due_slot(at(6, 31), "2026-10-27 06:30", TIMES) is None          # ya enviado
+    assert due_slot(at(8, 0), None, TIMES) == "2026-10-27 06:30"           # recupera dentro de 2 h
+    assert due_slot(at(9, 0), None, TIMES) is None                         # demasiado tarde para Londres
+    assert due_slot(at(13, 5), "2026-10-27 06:30", TIMES) == "2026-10-27 13:00"
+    assert due_slot(datetime(2026, 10, 31, 6, 30, tzinfo=UTC), None, TIMES) is None  # sábado
+    assert upcoming_sessions(at(6, 30)) == ["Londres"]
+    assert upcoming_sessions(at(11, 0)) == ["Nueva York"]
+
+
+def test_one_email_per_slot_through_real_redis_round_trip():
+    """El fallo que mandaba un correo cada minuto: el turno enviado se guardaba y no se podía leer."""
+    fakeredis = pytest.importorskip("fakeredis")
+    from shared.bus import EventBus
+
+    bus = EventBus()
+    bus._client = fakeredis.FakeRedis(decode_responses=True)
+    monitoring = _load_monitoring_main()
+    sent = []
+    start = datetime(2026, 10, 27, 6, 0, tzinfo=UTC)
+    for minute in range(0, 8 * 60):  # de 06:00 a 14:00, un chequeo por minuto
+        now = start + timedelta(minutes=minute)
+        monitoring._maybe_send_report(bus, None, None, None, now=now,
+                                      send=lambda *args: sent.append(args[-1]))
+    assert [t.strftime("%H:%M") for t in sent] == ["06:30", "13:00"]
 
 
 def _candles(n=600):

@@ -1,5 +1,6 @@
 """
-Reporte diario por email (lunes a viernes, DAILY_REPORT_HOUR_UTC).
+Reportes por email antes de cada sesión (lunes a viernes, REPORT_TIMES_UTC;
+por defecto 06:30 y 13:00 UTC = 1:30 y 8:00 en Ecuador).
 
 Contenido: estado del sistema, qué ve el modelo en la última vela, cuenta
 simulada, operaciones de las últimas 24 h, acumulado desde el inicio y un
@@ -69,9 +70,29 @@ class ReportData:
 
 # ---------------------------------------------------------------- cálculos
 
-def should_send(now: datetime, last_sent: Optional[str], hour_utc: int) -> bool:
-    """Lunes a viernes, una vez al día, a partir de la hora indicada (recupera si el servicio estuvo caído)."""
-    return now.weekday() < 5 and now.hour >= hour_utc and last_sent != now.date().isoformat()
+CATCH_UP = timedelta(hours=2)  # si el servicio estuvo caído a la hora, se envía si no pasaron más de 2 h
+
+
+def due_slot(now: datetime, last_sent: Optional[str], times_utc: List[str]) -> Optional[str]:
+    """
+    Turno de reporte pendiente ("2026-10-27 06:30") o None. Lunes a viernes,
+    una vez por horario. Un turno vencido hace más de 2 h ya no se envía: el
+    reporte de Londres no sirve a mediodía.
+    """
+    if now.weekday() >= 5:
+        return None
+    for hhmm in sorted(times_utc, reverse=True):
+        h, m = (int(x) for x in hhmm.split(":"))
+        start = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if start <= now < start + CATCH_UP:
+            slot = f"{now.date().isoformat()} {h:02d}:{m:02d}"
+            return slot if slot != last_sent else None
+    return None
+
+
+def upcoming_sessions(now: datetime) -> List[str]:
+    """Sesiones que abren en las próximas 2 horas (para titular el reporte)."""
+    return [name for name, (a, _) in SESSIONS.items() if 0 <= a * 60 - (now.hour * 60 + now.minute) <= 120]
 
 
 def fibonacci_levels(df: pd.DataFrame) -> Dict[str, Any]:
@@ -270,7 +291,9 @@ def build_report(data: ReportData) -> Tuple[str, str, str]:
     close = float(data.candles["close"].iloc[-1])
     sessions = active_sessions(data.now)
 
-    subject = (f"[Reporte diario] {data.pair} {data.now:%d/%m} · {'✅ sistema OK' if ok else '⚠️ revisar sistema'} · "
+    upcoming = upcoming_sessions(data.now)
+    title = f"Antes de {' y '.join(upcoming)}" if upcoming else "Reporte"
+    subject = (f"[{title}] {data.pair} {data.now:%d/%m} ·{'✅ sistema OK' if ok else '⚠️ revisar sistema'} · "
                f"{model_short} · {len(data.open_orders)} posición(es) abierta(s)")
 
     # Estado
@@ -331,7 +354,7 @@ def build_report(data: ReportData) -> Tuple[str, str, str]:
 
     h2 = f"style='font-size:15px;margin:22px 0 8px;color:{TEXT_PRIMARY}'"
     html = f"""<html><body style="font-family:Arial,Helvetica,sans-serif;color:{TEXT_PRIMARY};background:{SURFACE};max-width:900px">
-<h1 style="font-size:19px;margin:0 0 4px">Reporte diario · {data.pair} {data.granularity}</h1>
+<h1 style="font-size:19px;margin:0 0 4px">{title} · {data.pair} {data.granularity}</h1>
 <div style="color:{TEXT_SECONDARY};font-size:13px">{data.now:%d/%m/%Y %H:%M} UTC ({(data.now - timedelta(hours=5)):%H:%M} en Ecuador) · modo simulación (DRY_RUN)</div>
 
 <h2 {h2}>{'✅ Sistema funcionando' if ok else '⚠️ Hay componentes con fallo'}</h2>

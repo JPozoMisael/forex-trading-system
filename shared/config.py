@@ -125,8 +125,9 @@ class Settings:
     # Avisos de fallo (sistema caído, sin velas nuevas...) y reporte diario (lunes a viernes)
     enable_system_alerts: bool = _get_bool("ENABLE_SYSTEM_ALERTS", "true")
     enable_daily_report: bool = _get_bool("ENABLE_DAILY_REPORT", "true")
-    # Hora UTC del reporte diario: 12 = 7:00 en Ecuador (UTC-5)
-    daily_report_hour_utc: int = int(os.getenv("DAILY_REPORT_HOUR_UTC", "12"))
+    # Horas UTC de los reportes (HH:MM separadas por coma). Por defecto, antes de
+    # cada sesión: 06:30 = 1:30 en Ecuador (Londres) y 13:00 = 8:00 en Ecuador (Nueva York).
+    report_times_utc: List[str] = field(default_factory=lambda: _get_list("REPORT_TIMES_UTC", "06:30,13:00"))
 
     # Streams de Redis (persistentes: un servicio caído no pierde mensajes)
     channel_market_candle: str = "market:candle"          # Nueva vela cerrada (sufijo :PAR)

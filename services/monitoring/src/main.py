@@ -20,7 +20,7 @@ from shared.bus import EventBus
 from telegram_alerts import TelegramNotifier
 from email_alerts import EmailNotifier
 from health_check import HealthChecker, failure_message
-from daily_report import send_daily_report, should_send
+from daily_report import due_slot, send_daily_report
 
 log = get_logger(__name__)
 
@@ -60,6 +60,22 @@ class AlertState:
         return None
 
 
+def _maybe_send_report(bus: EventBus, checker: HealthChecker, notifier, email_notifier,
+                       now: Optional[datetime] = None, send=None) -> Optional[str]:
+    """Envía el reporte si toca un turno que no se envió. Devuelve el turno enviado."""
+    now = now or datetime.now(timezone.utc)
+    # Como objeto JSON: un string suelto no se puede leer con get_json (por eso se repetía el envío)
+    last = (bus.get_json(settings.key_daily_report_sent) or {})
+    slot = due_slot(now, last.get("turno") if isinstance(last, dict) else None, settings.report_times_utc)
+    if slot is None:
+        return None
+    # Se marca antes de enviar: si el envío falla no se reintenta cada minuto
+    bus.set_json(settings.key_daily_report_sent, {"turno": slot})
+    log.info(f"📧 Enviando reporte del turno {slot} UTC...")
+    (send or send_daily_report)(email_notifier, notifier, bus, checker, now)
+    return slot
+
+
 def _health_monitor_loop(checker: HealthChecker, notifier: TelegramNotifier, email_notifier: EmailNotifier, bus: EventBus):
     """Hilo periódico: salud del sistema cada 60 s y reporte diario a su hora."""
     log.info("Iniciando monitor periódico de salud...")
@@ -86,15 +102,10 @@ def _health_monitor_loop(checker: HealthChecker, notifier: TelegramNotifier, ema
             log.error(f"Error en health check: {e}")
 
         try:
-            now = datetime.now(timezone.utc)
-            if settings.enable_daily_report and should_send(now, bus.get_json(settings.key_daily_report_sent),
-                                                            settings.daily_report_hour_utc):
-                # Se marca antes de enviar: si el envío falla no se reintenta cada minuto
-                bus.set_json(settings.key_daily_report_sent, now.date().isoformat())
-                log.info("📧 Enviando reporte diario...")
-                send_daily_report(email_notifier, notifier, bus, checker, now)
+            if settings.enable_daily_report:
+                _maybe_send_report(bus, checker, notifier, email_notifier)
         except Exception:
-            log.exception("Error generando el reporte diario")
+            log.exception("Error generando el reporte")
 
         for _ in range(60):  # Chequeo cada 60 segundos
             if not running:
