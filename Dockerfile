@@ -3,9 +3,10 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-# Instalar dependencias del sistema
+# Instalar dependencias del sistema (libgomp1: OpenMP, lo necesita LightGBM)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    libgomp1 \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
@@ -28,6 +29,9 @@ COPY services/ /app/services/
 COPY backtesting/ /app/backtesting/
 COPY scripts/ /app/scripts/
 COPY infra/ /app/infra/
+# Parámetros del modelo. El modelo (models/) no está en git: el strategy-engine
+# lo entrena al arrancar si no existe (~2 min, descarga la historia de Dukascopy).
+COPY config.yaml /app/config.yaml
 
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1

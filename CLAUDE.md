@@ -72,7 +72,8 @@ Ciclo de una orden en BD: `pending` → `submitting` → `filled` → `closed` (
 - Código, comentarios, logs y mensajes en **español**. Logs con `shared.logger.get_logger(__name__)`.
 - No leer `os.getenv` fuera de `shared/config.py`; agregar el campo a `Settings` y documentarlo en `.env.example`.
 - Nuevo broker de datos → implementar `MarketDataClient` y añadir rama en `build_market_client()` (data-collector). Nuevo broker de ejecución → implementar `Broker` en `services/execution-engine/src/brokers.py` y añadirlo en `build_broker()`.
-- Nueva estrategia → subclase de `BaseStrategy` en `services/strategy-engine/src/strategies/`, registrarla en la lista de `strategy-engine/src/main.py` y en `backtesting/src/run_backtest.py`; añadir test en `tests/test_strategies.py`.
+- Nueva estrategia → subclase de `BaseStrategy` en `services/strategy-engine/src/strategies/`, registrarla en `build_strategies()` de `strategy-engine/src/main.py` (se activa con `ACTIVE_STRATEGIES`) y en `backtesting/src/run_backtest.py`; añadir test en `tests/test_strategies.py`.
+- El strategy-engine usa por defecto `ACTIVE_STRATEGIES=ml`: carga `models/ml_<PAR>_<TF>.joblib` o lo entrena al arrancar (`ml/serving.py`). Solo opera el par y la temporalidad de `config.yaml`.
 - Horas siempre en UTC (MT5 entrega hora del servidor; `mt5_client.py` la convierte).
 
 ## Reglas de seguridad (no romper)

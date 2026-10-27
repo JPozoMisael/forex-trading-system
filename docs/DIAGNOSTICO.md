@@ -11,7 +11,8 @@
 | Área | Estado | Dónde |
 |---|---|---|
 | Datos de mercado OANDA (REST) y MT5 (XM) | ✅ | `services/data-collector/`, `shared/mt5_client.py` |
-| Estrategias `ma_crossover` (EMA 9/21 + EMA 200) y `mean_reversion` (Bollinger + RSI) | ✅ | `services/strategy-engine/src/strategies/` |
+| Modelo LightGBM (`MLStrategy`) en el strategy-engine, activo por defecto (`ACTIVE_STRATEGIES=ml`); se entrena al arrancar si falta | ✅ sin ventaja probada | `services/strategy-engine/src/ml/` |
+| Estrategias `ma_crossover` (EMA 9/21 + EMA 200) y `mean_reversion` (Bollinger + RSI), inactivas por defecto | ✅ validadas: SIN VENTAJA | `services/strategy-engine/src/strategies/` |
 | Riesgo fail-closed: lotes con `tick_value`, circuit breaker sobre equity, límite de posiciones, spread, R:R mínimo | ✅ | `services/risk-manager/src/` |
 | Ejecución simulada (`SimulatedBroker`) y real MT5 (`MT5Broker`), idempotente y reconciliada | ✅ | `services/execution-engine/src/` |
 | Alertas Telegram / email, health check | ✅ | `services/monitoring/src/` |

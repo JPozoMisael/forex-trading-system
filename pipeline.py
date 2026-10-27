@@ -28,13 +28,14 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from data_loader import load_from_dukascopy
+from ml import serving
 from shared.config import load_trading_config
 
 MODELS_DIR = ROOT / "models"
 
 
 def model_path(pair: str, gran: str) -> Path:
-    return MODELS_DIR / f"ml_{pair}_{gran}.joblib"
+    return serving.model_path(MODELS_DIR, pair, gran)
 
 
 def step_datos(cfg):
@@ -58,14 +59,11 @@ def step_entrenar(cfg, verdict=None):
     df = load_from_dukascopy(m["par"], m["temporalidad"], refresh=False)
     strategy = MLStrategy.train(df, cfg, m["par"])
     path = model_path(m["par"], m["temporalidad"])
-    strategy.model.save(path)
-
-    meta = dict(strategy.model.meta)
-    meta.update(par=m["par"], temporalidad=m["temporalidad"], config=cfg)
+    extra = None
     if verdict is not None:
-        meta["validacion"] = {"veredicto": verdict.label, "expectativa_r": verdict.expectancy_r,
-                              "p_valor": verdict.p_value, "operaciones": verdict.n_trades}
-    path.with_suffix(".json").write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
+        extra = {"validacion": {"veredicto": verdict.label, "expectativa_r": verdict.expectancy_r,
+                                "p_valor": verdict.p_value, "operaciones": verdict.n_trades}}
+    meta = serving.save_model(strategy, path, cfg, extra)
     print(f"[v] Modelo final entrenado con {meta['muestras']:,} muestras ({meta['desde'][:10]} a {meta['hasta'][:10]}) -> {path}")
     return path
 

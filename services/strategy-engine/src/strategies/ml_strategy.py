@@ -32,6 +32,7 @@ class MLStrategy(BaseStrategy):
         pair: str = "EUR_USD",
         spread_pips: float = 0.0,
         slippage_pips: float = 0.0,
+        granularity: Optional[str] = None,
     ):
         super().__init__(name="ML_LightGBM")
         self.model = model
@@ -44,6 +45,7 @@ class MLStrategy(BaseStrategy):
         self.pair = pair
         self.spread_pips = spread_pips
         self.slippage_pips = slippage_pips
+        self.granularity = granularity
         self._cache: Optional[pd.DataFrame] = None
 
     @classmethod
@@ -58,6 +60,7 @@ class MLStrategy(BaseStrategy):
             pair=pair,
             spread_pips=float(cfg["costes"]["spread_pips"]),
             slippage_pips=float(cfg["costes"]["slippage_pips"]),
+            granularity=cfg.get("mercado", {}).get("temporalidad"),
         )
 
     @classmethod
@@ -82,6 +85,10 @@ class MLStrategy(BaseStrategy):
     def lookback_window(self) -> int:
         # Historia que recibe evaluate(): de sobra para que la EMA 200 converja.
         return 1000
+
+    def supports(self, pair: str, granularity: str) -> bool:
+        # El modelo solo sabe del par y la temporalidad con que se entrenó
+        return pair == self.pair and (self.granularity is None or granularity.upper() == self.granularity.upper())
 
     def _features(self, df: pd.DataFrame) -> pd.DataFrame:
         return build_features(df, self.atr_period, getattr(self.model, "conjunto", "base"))

@@ -40,6 +40,7 @@ Par, temporalidad, costos (spread, slippage, comisión), riesgo (% por operació
 | Validación | `backtesting/src/validation.py` | Walk-forward (reentrena con el pasado en cada ventana), líneas base, permutación, bootstrap, veredicto |
 | Informe | `backtesting/src/report.py` | `reports/<fecha>/informe.md` + `equity.png` + operaciones en CSV |
 | Paper trading | `backtesting/src/paper_trader.py` | Mismas reglas que el backtest; estado y logs en `logs/paper/` |
+| En el sistema desplegado | `services/strategy-engine/src/ml/serving.py` | Con `ACTIVE_STRATEGIES=ml` el strategy-engine carga `models/ml_<PAR>_<TF>.joblib` o, si no existe, lo entrena al arrancar (~1 min) |
 
 ### Resultado actual (2026-10-27): **el modelo NO tiene ventaja probada**
 Protocolo: las variantes se comparan solo en el periodo de **desarrollo** (2014-10 a 2023-10) y la elegida se evalúa **una vez** en la **prueba final** (2023-10 a 2026-10), con costos.
@@ -228,7 +229,7 @@ class MiEstrategia(BaseStrategy):
             )
         return None
 ```
-2. Regístrala en `services/strategy-engine/src/main.py` dentro de la lista de estrategias activas.
+2. Regístrala en `build_strategies()` de `services/strategy-engine/src/main.py` y actívala con `ACTIVE_STRATEGIES` en `.env`.
 3. **Antes de activarla en vivo**, pruébala en el backtester con historial real y después en `DRY_RUN=true`.
 
 ---

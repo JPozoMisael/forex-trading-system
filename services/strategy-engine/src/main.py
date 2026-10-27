@@ -10,23 +10,28 @@ import os
 import signal
 import sys
 from datetime import datetime
-from typing import Dict, Optional
+from pathlib import Path
+from typing import Dict, List, Optional
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, ROOT)
 
 import pandas as pd
 import psycopg2
 
-from shared.config import settings
+from shared.config import load_trading_config, settings
 from shared.logger import get_logger
 from shared.bus import EventBus
 from shared.models import Candle
 
+from strategies.base_strategy import BaseStrategy
 from strategies.ma_crossover import MACrossoverStrategy
 from strategies.mean_reversion import MeanReversionStrategy
 from signal_publisher import SignalPublisher
 
 log = get_logger(__name__)
+
+MODELS_DIR = Path(ROOT) / "models"
 
 running = True
 
@@ -72,17 +77,38 @@ def load_recent_candles(pair: str, granularity: str, limit: int = 300) -> Option
         return None
 
 
+def build_strategies(names: List[str], models_dir: Path = MODELS_DIR) -> List[BaseStrategy]:
+    """Estrategias activas según ACTIVE_STRATEGIES. Un nombre desconocido es un error."""
+    strategies: List[BaseStrategy] = []
+    for name in names:
+        if name == "ma_crossover":
+            strategies.append(MACrossoverStrategy(fast_period=9, slow_period=21, trend_period=200, use_trend_filter=True))
+        elif name == "mean_reversion":
+            strategies.append(MeanReversionStrategy(bb_period=20, bb_std=2.0, rsi_period=14, rsi_oversold=30.0, rsi_overbought=70.0))
+        elif name == "ml":
+            from ml.serving import load_or_train
+
+            cfg = load_trading_config()
+            strat = load_or_train(cfg, models_dir, log=log.info)
+            pair, gran = cfg["mercado"]["par"], cfg["mercado"]["temporalidad"]
+            if pair not in settings.forex_pairs or gran.upper() != settings.candle_granularity:
+                log.error(f"El modelo es de {pair} {gran} (config.yaml) pero el sistema recibe {settings.forex_pairs} "
+                          f"{settings.candle_granularity}: no generará señales. Ajusta FOREX_PAIRS y CANDLE_GRANULARITY.")
+            strategies.append(strat)
+        else:
+            raise ValueError(f"Estrategia desconocida '{name}' en ACTIVE_STRATEGIES. Opciones: ml, ma_crossover, mean_reversion")
+    if not strategies:
+        raise ValueError("ACTIVE_STRATEGIES está vacío")
+    return strategies
+
+
 def main():
     signal.signal(signal.SIGINT, _handle_shutdown)
     signal.signal(signal.SIGTERM, _handle_shutdown)
 
     log.info("Iniciando strategy-engine...")
 
-    # Instanciamos estrategias activas
-    strategies = [
-        MACrossoverStrategy(fast_period=9, slow_period=21, trend_period=200, use_trend_filter=True),
-        MeanReversionStrategy(bb_period=20, bb_std=2.0, rsi_period=14, rsi_oversold=30.0, rsi_overbought=70.0),
-    ]
+    strategies = build_strategies(settings.active_strategies)
     history_needed = max(s.lookback_window for s in strategies)
 
     bus = EventBus()
@@ -113,6 +139,8 @@ def main():
             last_evaluated[pair] = candle.timestamp
 
             for strat in strategies:
+                if not strat.supports(pair, candle.granularity):
+                    continue
                 try:
                     sig = strat.evaluate(df.iloc[-strat.lookback_window:], pair=pair)
                     if sig:

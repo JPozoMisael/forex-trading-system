@@ -29,6 +29,10 @@ class BaseStrategy(ABC):
         """
         return self.min_candles_required * 3
 
+    def supports(self, pair: str, granularity: str) -> bool:
+        """Si la estrategia sabe operar este par y temporalidad (las de reglas: todos)."""
+        return True
+
     @abstractmethod
     def evaluate(self, df: pd.DataFrame, pair: str) -> Optional[Signal]:
         """

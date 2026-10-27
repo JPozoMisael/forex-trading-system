@@ -4,3 +4,9 @@ psycopg2-binary>=2.9.10
 pydantic==2.9.2
 python-dotenv==1.0.1
 redis==5.0.8
+# Modelo predictivo (ACTIVE_STRATEGIES=ml): entrenar/cargar y descargar historia
+PyYAML==6.0.3
+lightgbm==4.7.0
+scikit-learn==1.9.1
+joblib==1.6.0
+dukascopy-python==4.0.1

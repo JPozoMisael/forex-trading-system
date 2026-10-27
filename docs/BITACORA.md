@@ -5,6 +5,15 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-27 (paso 3: el modelo en Dokploy) · DESKTOP-RC7UDV1
+
+- El strategy-engine desplegado usa el modelo en lugar de `ma_crossover` y `mean_reversion` (sin ventaja). Se elige con `ACTIVE_STRATEGIES` (por defecto `ml`).
+- `ml/serving.py`: carga `models/ml_EUR_USD_H1.joblib` o, en un contenedor nuevo, lo entrena al arrancar con 15 años de Dukascopy (probado: 52 s, las mismas 96.661 muestras que el modelo local). `pipeline.py entrenar` guarda con la misma función.
+- Con las 1000 velas que lee de la BD, la probabilidad es **idéntica** a la calculada con toda la historia (diferencia 0 en 200 velas): en vivo decide lo mismo que en el backtest.
+- El modelo solo opera su par y temporalidad (`supports()`); avisa en el log si `FOREX_PAIRS`/`CANDLE_GRANULARITY` no coinciden con `config.yaml`.
+- Dockerfile: `libgomp1` (LightGBM), `config.yaml` y dependencias del modelo. 100 tests pasan.
+- **Siguiente paso:** push + *Redeploy*; revisar en los logs `Modelo entrenado ...` y, en cada hora, `Vela cerrada`. Dejarlo correr semanas (con `DRY_RUN=true`) y comparar sus operaciones con el backtest.
+
 ## 2026-10-27 (paso 2: Dukascopy en el pipeline desplegado) · DESKTOP-RC7UDV1
 
 - `shared/dukascopy.py` es la única implementación de la descarga: la usan el backtester (`data_loader.py`) y el nuevo `DukascopyClient(MarketDataClient)`.

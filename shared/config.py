@@ -47,6 +47,8 @@ class Settings:
     collector_poll_seconds: int = int(os.getenv("COLLECTOR_POLL_SECONDS", "15"))
     # Velas a descargar al arrancar para que las estrategias (EMA 200) tengan historia.
     collector_backfill_candles: int = int(os.getenv("COLLECTOR_BACKFILL_CANDLES", "1000"))
+    # Estrategias del strategy-engine: ml (modelo de config.yaml), ma_crossover, mean_reversion.
+    active_strategies: List[str] = field(default_factory=lambda: _get_list("ACTIVE_STRATEGIES", "ml"))
 
     # Base de datos (TimescaleDB / PostgreSQL)
     postgres_user: str = os.getenv("POSTGRES_USER", "forex")
