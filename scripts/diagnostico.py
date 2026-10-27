@@ -199,7 +199,12 @@ def revisar_postgres(inf):
             cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public'")
             tablas = {r[0] for r in cur.fetchall()}
             for t in ("candles", "signals", "orders"):
-                (inf.ok if t in tablas else inf.mal)(f"tabla {t}: {'existe' if t in tablas else 'NO existe (correr init.sql)'}")
+                (inf.ok if t in tablas else inf.mal)(f"tabla {t}: {'existe' if t in tablas else 'NO existe -> python scripts/init_db.py'}")
+            if "schema_version" in tablas:
+                cur.execute("SELECT MAX(version) FROM schema_version")
+                inf.ok(f"esquema v{cur.fetchone()[0]}")
+            else:
+                inf.info("esquema v1 o desconocido -> python scripts/init_db.py lo actualiza a v2")
             if "candles" in tablas:
                 cur.execute("SELECT pair, granularity, COUNT(*), MAX(timestamp) FROM candles GROUP BY 1, 2 ORDER BY 1, 2")
                 for par, gran, n, ultima in cur.fetchall():

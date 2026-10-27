@@ -1,4 +1,5 @@
--- Migración para bases de datos creadas con la versión anterior de init.sql.
+-- Migración para bases de datos de la versión OANDA original (anterior al esquema v1).
+-- Después de ejecutarla, aplica el esquema actual con:  python scripts/init_db.py
 -- Es idempotente: se puede ejecutar varias veces sin romper nada.
 --
 -- Uso (con el contenedor de desarrollo corriendo):

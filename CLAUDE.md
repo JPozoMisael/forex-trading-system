@@ -24,6 +24,9 @@ docker compose -f docker-compose-dev.yml up -d
 # Diagnóstico del entorno de esta computadora (no envía órdenes ni muestra credenciales)
 .venv\Scripts\python scripts\diagnostico.py --guardar   # guarda en docs/diagnosticos/
 
+# Base de datos: crear/actualizar el esquema en la BD del .env (idempotente; ver docs/BASE_DE_DATOS.md)
+.venv\Scripts\python scripts\init_db.py              # --verificar = solo mostrar estado
+
 # Verificaciones (no envían órdenes)
 .venv\Scripts\python scripts\check_feed.py    # fuente OANDA
 .venv\Scripts\python scripts\check_mt5.py     # terminal MT5/XM
@@ -55,7 +58,7 @@ Flujo: `data-collector` → `strategy-engine` → `risk-manager` → `execution-
 
 Código compartido en `shared/`: `config.py` (toda la config sale de aquí vía `settings`), `bus.py` (`EventBus` sobre Redis Streams con grupos de consumidores), `models.py` (Pydantic: `Signal`, `OrderRequest`, `AccountSummary`, `SymbolSpec`…), `fx.py` (pips y conversión a USD), `mt5_client.py`, `market_client.py` (interfaz `MarketDataClient`).
 
-Ciclo de una orden en BD: `pending` → `submitting` → `filled` → `closed` (o `rejected` / `cancelled`). Esquema en `infra/postgres/init.sql`; cambios de esquema van como nuevo archivo en `infra/postgres/migrations/` (siguiente: `002_...sql`).
+Ciclo de una orden en BD: `pending` → `submitting` → `filled` → `closed` (o `rejected` / `cancelled`). Esquema v2 en `infra/postgres/init.sql` (idempotente, TimescaleDB opcional; referencia en `docs/BASE_DE_DATOS.md`). Los cambios se hacen en `init.sql` manteniéndolo idempotente y subiendo `schema_version`; leer las reglas de esa guía antes (precios en DOUBLE PRECISION, nada de CHECK que pueda fallar al marcar filled/closed).
 
 ### Convenciones
 
@@ -83,6 +86,7 @@ El estado ya no se guarda aquí. Vive en `docs/`:
 |---|---|
 | `docs/BITACORA.md` | Qué se hizo en cada sesión y cuál es el **siguiente paso**. Leer primero. |
 | `docs/DIAGNOSTICO.md` | Estado técnico del código: qué funciona, problemas P1..Pn, riesgos. |
+| `docs/BASE_DE_DATOS.md` | Tablas, vistas, cómo crear/actualizar la BD y reglas para cambiar el esquema. |
 | `docs/PLAN_INTEGRACION_COLAB.md` | Hoja de ruta para portar el script de Google Colab (`research/colab/`). |
 | `docs/diagnosticos/<fecha>_<equipo>.md` | Informe del entorno de cada computadora (lo genera `scripts/diagnostico.py`). |
 

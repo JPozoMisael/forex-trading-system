@@ -96,7 +96,14 @@ Levanta la infraestructura en Docker, revisa MT5 y abre una ventana por servicio
 | `DRY_RUN=false` + cuenta **real** | El execution-engine **se niega a arrancar**… |
 | … + `ALLOW_LIVE_TRADING=true` | …salvo que actives explícitamente este candado. |
 
-### Si ya tenías la base de datos de la versión anterior
+### Crear o actualizar la base de datos
+Si la BD ya existía, o está fuera de Docker (por ejemplo en Dokploy), aplica el esquema con:
+```powershell
+.venv\Scripts\python scripts\init_db.py
+```
+Se puede ejecutar varias veces y no borra datos. Funciona con PostgreSQL normal o con TimescaleDB. Detalle en [docs/BASE_DE_DATOS.md](docs/BASE_DE_DATOS.md).
+
+Si venías de la versión OANDA original, ejecuta antes la migración antigua:
 ```powershell
 docker exec -i forex_timescaledb_dev psql -U forex -d forex_data < infra\postgres\migrations\001_xm_mt5.sql
 ```
