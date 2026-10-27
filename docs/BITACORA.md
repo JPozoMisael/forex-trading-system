@@ -5,6 +5,21 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-27 (cierre) · DESKTOP-RC7UDV1
+
+- **Fase 6, informe** (`backtesting/src/report.py`): `reports/<fecha>_<PAR>_<TF>/` con `informe.md` (empieza respondiendo "¿el modelo supera a las líneas base?"), `equity.png` y las operaciones en CSV.
+- **Fase 7, paper trading y pipeline:**
+  - `backtesting/src/paper_trader.py` simula órdenes con las mismas reglas del backtester. Un test comprueba que da **las mismas operaciones** que el backtest, también tras reiniciarse.
+  - `pipeline.py` hace todo con un comando: `datos`, `validar`, `entrenar`, `senales [--continuo]`. Logs y estado en `logs/paper/`; modelo en `models/`.
+  - README con instalación, configuración, uso y el resultado actual. 89 tests pasan.
+- Arreglo: `make_windows` aceptaba solo años enteros (lo detectó `tests/test_report.py`).
+- **MVP de punta a punta terminado, pero el modelo no tiene ventaja.** Siguientes pasos posibles:
+  1. Mejorar el modelo reservando el último año como prueba final intocable.
+  2. Fuente Dukascopy en el pipeline desplegado (P10).
+  3. Dejar `pipeline.py senales --continuo` corriendo unas semanas para comparar paper trading con backtest.
+
+---
+
 ## 2026-10-27 (noche) · DESKTOP-RC7UDV1
 
 - **Fase 4, validación** (`backtesting/src/validation.py`, `run_validation.py`, `config.yaml`): walk-forward con ventana creciente (3 años de entrenamiento y ventanas de prueba de 6 meses; 6 ventanas de 2023-10 a 2026-10), saldo encadenado, líneas base (no operar y buy & hold), permutación contra la operación opuesta, bootstrap y veredicto del Colab.

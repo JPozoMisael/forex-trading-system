@@ -98,11 +98,7 @@ class BacktestEngine:
 
         def close_trade(trade: Dict[str, Any], exit_price: float, exit_time, reason: str):
             nonlocal balance
-            is_buy = trade["side"] == OrderSide.BUY
-            diff = (exit_price - trade["entry_price"]) if is_buy else (trade["entry_price"] - exit_price)
-            gross = diff * trade["units"] * quote_to_usd_rate(pair, exit_price)  # en USD
-            comm = trade["units"] / STANDARD_LOT * self.commission_per_lot
-            pnl = gross - comm
+            pnl, comm, diff = self.trade_pnl(trade, exit_price, pair)
             balance += pnl
             trades.append(
                 {
@@ -201,6 +197,14 @@ class BacktestEngine:
             equity_series=equity_series,
             trades_df=trades_df,
         )
+
+    def trade_pnl(self, trade: Dict[str, Any], exit_price: float, pair: str):
+        """(pnl neto en USD, comisión, diferencia de precio a favor) al cerrar `trade` en `exit_price`."""
+        is_buy = trade["side"] == OrderSide.BUY
+        diff = (exit_price - trade["entry_price"]) if is_buy else (trade["entry_price"] - exit_price)
+        gross = diff * trade["units"] * quote_to_usd_rate(pair, exit_price)  # en USD
+        comm = trade["units"] / STANDARD_LOT * self.commission_per_lot
+        return gross - comm, comm, diff
 
     def _open_trade(
         self,

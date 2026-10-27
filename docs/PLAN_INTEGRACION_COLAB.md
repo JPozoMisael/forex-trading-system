@@ -64,8 +64,8 @@ Cada fase se cierra con tests verdes y una entrada en [BITACORA.md](BITACORA.md)
    - Features calculadas solo con velas cerradas: retornos, ATR, RSI, distancia a EMAs, volatilidad, hora y día.
    - Target de **triple barrera**: ¿toca primero el TP o el SL (en múltiplos de ATR) dentro de N velas?
    - LightGBM, que solo opera si la probabilidad supera un umbral configurable.
-6. **Informe** → `backtesting/src/report.py`: curva de equity (PNG) y tabla de métricas por ventana en `reports/`. El PDF con `reportlab` viene después.
-7. **Paper trading** independiente: script con datos de Dukascopy, sin Docker, con órdenes simuladas y log en archivos. `config.yaml` (par, temporalidad, modelo, riesgo, costos) cargado desde `shared/config.py`; claves solo en `.env`. Pipeline en un comando (entrenar → validar → señales) y README.
+6. ✅ **Informe** (2026-10-27) → `backtesting/src/report.py`: curva de equity (PNG) y tabla de métricas por ventana en `reports/`. El PDF con `reportlab` viene después.
+7. ✅ **Paper trading** (2026-10-27, `pipeline.py senales`) independiente: script con datos de Dukascopy, sin Docker, con órdenes simuladas y log en archivos. `config.yaml` (par, temporalidad, modelo, riesgo, costos) cargado desde `shared/config.py`; claves solo en `.env`. Pipeline en un comando (entrenar → validar → señales) y README.
 
 **Después del MVP**
 

@@ -40,7 +40,13 @@ docker compose up -d --build
 
 # Backtest
 .venv\Scripts\python backtesting\src\run_backtest.py --pair EUR_USD --strategy ma_crossover --source synthetic
+
+# Modelo predictivo (config.yaml): datos Dukascopy -> validación walk-forward + informe -> modelo -> paper trading
+.venv\Scripts\python pipeline.py                     # todo; o un paso: datos | validar | entrenar | senales [--continuo]
+.venv\Scripts\python backtesting\src\run_validation.py --strategies ml,ma_crossover   # solo validación + informe
 ```
+
+Parámetros del modelo, los costos y la validación en `config.yaml` (sin secretos). Fijarlos **antes** de mirar resultados fuera de muestra. Toda estrategia nueva se valida con `validation.py`; solo se activa si el veredicto es `VENTAJA CON EVIDENCIA`.
 
 Un servicio se corre nativo con `.venv\Scripts\python services\<servicio>\src\main.py`.
 

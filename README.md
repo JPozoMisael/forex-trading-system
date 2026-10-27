@@ -4,6 +4,54 @@ Plataforma modular de **trading algorítmico para Forex** con **arquitectura ori
 
 ---
 
+## 🤖 Modelo predictivo: pipeline en un solo comando
+
+Modelo LightGBM para EUR_USD H1, con datos de **Dukascopy** (gratis, sin cuenta). Se valida fuera de muestra con costos reales y corre en **paper trading** sin Docker ni broker.
+
+### Instalación (Windows, PowerShell)
+```powershell
+python -m venv .venv
+.venv\Scripts\pip install -r requirements-local.txt
+```
+
+### Uso
+```powershell
+.venv\Scripts\python pipeline.py                      # todo: datos -> validar -> entrenar -> señales
+.venv\Scripts\python pipeline.py datos                # descarga/actualiza velas en data/ (parquet)
+.venv\Scripts\python pipeline.py validar              # walk-forward + informe en reports/
+.venv\Scripts\python pipeline.py entrenar             # modelo final con toda la historia -> models/
+.venv\Scripts\python pipeline.py senales              # paper trading: procesa velas nuevas y termina
+.venv\Scripts\python pipeline.py senales --continuo   # paper trading: revisa cada minuto (Ctrl+C para parar)
+```
+La primera vez descarga 6 años de datos (unos 30 s). El pipeline completo tarda menos de un minuto.
+
+### Configuración: `config.yaml`
+Par, temporalidad, costos (spread, slippage, comisión), riesgo (% por operación, SL y TP en ATR, pérdida diaria máxima), parámetros del modelo (horizonte, umbral de probabilidad, LightGBM) y ventanas de validación. **Sin claves**: las claves van en `.env`. Fija los valores **antes** de mirar los resultados; si los cambias hasta que el backtest salga bien, el resultado deja de ser fuera de muestra.
+
+### Cómo funciona
+| Pieza | Archivo | Qué hace |
+|---|---|---|
+| Datos | `backtesting/src/data_loader.py` | Dukascopy bid/ask → precio medio, spread real, solo velas cerradas, caché incremental |
+| Features | `services/strategy-engine/src/ml/features.py` | Retornos, ATR, RSI, distancia a EMAs, volatilidad, hora y día. Solo usan el pasado |
+| Target | `services/strategy-engine/src/ml/labels.py` | Triple barrera: ¿toca el TP (3 ATR) antes que el SL (2 ATR) en 48 velas?, con costos |
+| Modelo | `services/strategy-engine/src/ml/model.py` | Dos LightGBM (compras y ventas) |
+| Estrategia | `services/strategy-engine/src/strategies/ml_strategy.py` | `MLStrategy(BaseStrategy)`: opera si P ≥ umbral; igual en backtest y en vivo |
+| Backtest | `backtesting/src/engine.py` | Entrada a la apertura siguiente, spread completo, slippage, comisión, SL si SL y TP en la misma vela, límite diario |
+| Validación | `backtesting/src/validation.py` | Walk-forward (reentrena con el pasado en cada ventana), líneas base, permutación, bootstrap, veredicto |
+| Informe | `backtesting/src/report.py` | `reports/<fecha>/informe.md` + `equity.png` + operaciones en CSV |
+| Paper trading | `backtesting/src/paper_trader.py` | Mismas reglas que el backtest; estado y logs en `logs/paper/` |
+
+### Resultado actual (2026-10-27): **el modelo NO tiene ventaja**
+Fuera de muestra, 6 ventanas de 6 meses (2023-10 a 2026-10), con costos: **modelo −16.0 %**, cruce de EMAs −36.3 %, buy & hold +5.3 %, no operar 0 %. Veredicto: **SIN VENTAJA** (expectativa −0.02 R, p = 0.079). Úsalo solo para observar en paper trading, **nunca con dinero real** hasta que una versión nueva obtenga `VENTAJA CON EVIDENCIA`.
+
+### Paper trading
+`logs/paper/` contiene `paper.log`, `senales.csv`, `operaciones.csv`, `equity.csv` y `estado.json`. El estado se conserva: si lo detienes, sigue donde quedó. **No envía órdenes a ningún broker.** Para leer el log en PowerShell: `Get-Content logs\paper\paper.log -Encoding utf8 -Tail 20`.
+
+### Seguridad de ejecución
+El paper trading solo simula. Enviar órdenes a una cuenta es tarea del pipeline de microservicios, con `DRY_RUN=true` por defecto. Con una cuenta **real**, además se niega a operar salvo `ALLOW_LIVE_TRADING=true` en `.env`.
+
+---
+
 ## 🌟 ¿Qué hace?
 
 1. **Analiza precios en tiempo real** (API de OANDA en cualquier servidor, o MetaTrader 5 en Windows) y opera en simulación o en un broker real, con SL y TP adjuntos a cada orden.
@@ -116,11 +164,14 @@ Agrega las columnas nuevas, cancela las órdenes viejas que no se pueden reconci
 ## 🧪 Laboratorio de Backtesting
 
 ```powershell
-# Historial real desde tu terminal XM (por defecto)
-.venv\Scripts\python backtesting\src\run_backtest.py --pair EUR_USD --strategy ma_crossover --candles 50000
-# Otras fuentes: --source db | --source csv --csv archivo.csv | --source synthetic (solo para probar el código)
+# Un backtest simple con datos de Dukascopy (por defecto, H1)
+.venv\Scripts\python backtesting\src\run_backtest.py --pair EUR_USD --strategy ma_crossover --commission 7
+# Otras fuentes: --source mt5 | --source db | --source csv --csv archivo.csv | --source synthetic (solo para probar el código)
+
+# Validación fuera de muestra (walk-forward, líneas base, veredicto e informe)
+.venv\Scripts\python backtesting\src\run_validation.py --strategies ml,ma_crossover,mean_reversion
 ```
-Opciones: `--pair`, `--strategy` (`ma_crossover` | `mean_reversion`), `--capital`, `--risk`, `--spread`, `--candles`, `--granularity`, `--source`, `--csv`.
+Opciones de `run_backtest.py`: `--pair`, `--strategy` (`ma_crossover` | `mean_reversion`), `--capital`, `--risk`, `--spread`, `--slippage`, `--commission`, `--max-daily-loss`, `--candles`, `--granularity`, `--source`, `--csv`.
 
 El backtester soporta pares con USD (`XXX_USD`, `USD_XXX`) y reporta el PnL en USD.
 
