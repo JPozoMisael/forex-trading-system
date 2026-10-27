@@ -5,6 +5,26 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-27 (paso 1: mejorar el modelo) · DESKTOP-RC7UDV1
+
+- **Protocolo anti-sobreajuste** (commit `f9a7a9c`, hecho ANTES de correr nada):
+  - Historia desde 2011.
+  - Corte `inicio_prueba_final = 2023-10-27`: las variantes se comparan solo antes de esa fecha (desarrollo, 18 ventanas de 2014-10 a 2023-10).
+  - 4 variantes y la regla de selección quedaron registradas en `config.yaml`.
+  - `backtesting/src/run_experiments.py` corre el desarrollo y, con `--final`, la prueba final.
+- **Desarrollo:**
+
+  | Variante | Retorno | PF | Ops | Expectativa | Veredicto |
+  |---|---|---|---|---|---|
+  | v1_base | +8.2 % | 1.02 | 695 | +0.019 R | Positivo no concluyente |
+  | v2_extendido | −41.3 % | 0.91 | 830 | −0.057 R | Sin ventaja |
+  | v3_extendido_regularizado | +3.6 % | 1.09 | 64 | +0.063 R | Positivo no concluyente |
+  | v4_regularizado_umbral_055 | −2.4 % | 0.71 | 12 | −0.193 R | Insuficiente |
+
+  La regla elige **v1_base** (v3 no llega a 100 operaciones). Las features extendidas empeoran el modelo.
+- **Prueba final, una vez:** v1 entrenado desde 2011 da **+2.4 %**, DD 9.1 %, PF 1.05, 76 ops, +0.04 R, p = 0.31: **POSITIVO PERO NO CONCLUYENTE**. Gana a no operar (0 %) y a ma_crossover (−36.3 %), **pierde contra buy & hold (+5.3 %)**. Antes, con 6 años de historia, daba −16 %: más historia lo vuelve más selectivo (76 operaciones en vez de 569).
+- La prueba final 2023-10 → 2026-10 **ya está usada**. Para la próxima ronda de variantes hace falta datos nuevos: paper trading hacia adelante o una prueba final más reciente.
+
 ## 2026-10-27 (cierre) · DESKTOP-RC7UDV1
 
 - **Fase 6, informe** (`backtesting/src/report.py`): `reports/<fecha>_<PAR>_<TF>/` con `informe.md` (empieza respondiendo "¿el modelo supera a las líneas base?"), `equity.png` y las operaciones en CSV.

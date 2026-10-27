@@ -41,8 +41,23 @@ Par, temporalidad, costos (spread, slippage, comisión), riesgo (% por operació
 | Informe | `backtesting/src/report.py` | `reports/<fecha>/informe.md` + `equity.png` + operaciones en CSV |
 | Paper trading | `backtesting/src/paper_trader.py` | Mismas reglas que el backtest; estado y logs en `logs/paper/` |
 
-### Resultado actual (2026-10-27): **el modelo NO tiene ventaja**
-Fuera de muestra, 6 ventanas de 6 meses (2023-10 a 2026-10), con costos: **modelo −16.0 %**, cruce de EMAs −36.3 %, buy & hold +5.3 %, no operar 0 %. Veredicto: **SIN VENTAJA** (expectativa −0.02 R, p = 0.079). Úsalo solo para observar en paper trading, **nunca con dinero real** hasta que una versión nueva obtenga `VENTAJA CON EVIDENCIA`.
+### Resultado actual (2026-10-27): **el modelo NO tiene ventaja probada**
+Protocolo: las variantes se comparan solo en el periodo de **desarrollo** (2014-10 a 2023-10) y la elegida se evalúa **una vez** en la **prueba final** (2023-10 a 2026-10), con costos.
+
+| Prueba final (2023-10 a 2026-10) | Retorno | Max DD | Profit factor | Ops |
+|---|---|---|---|---|
+| **Modelo v1 (entrenado desde 2011)** | **+2.4 %** | 9.1 % | 1.05 | 76 |
+| Buy & Hold | +5.3 % | 9.1 % | – | 6 |
+| Sin operar | 0 % | 0 % | – | 0 |
+| Cruce de EMAs | −36.3 % | 47.0 % | 0.86 | 402 |
+
+Veredicto: **POSITIVO PERO NO CONCLUYENTE** (expectativa +0.04 R, IC 95 % [−0.23, +0.31], p = 0.31). Le gana a no operar y al cruce de EMAs, pero **no a buy & hold**, y 76 operaciones son muy pocas para descartar la suerte. Úsalo solo para observar en paper trading, **nunca con dinero real** hasta que una versión obtenga `VENTAJA CON EVIDENCIA`.
+
+Para probar variantes nuevas sin sobreajustar: agrégalas en `experimentos` de `config.yaml`, haz commit **antes** de correrlas y luego:
+```powershell
+.venv\Scripts\python backtesting\src\run_experiments.py                  # compara en desarrollo y aplica la regla
+.venv\Scripts\python backtesting\src\run_experiments.py --final <variante>   # prueba final, una sola vez
+```
 
 ### Paper trading
 `logs/paper/` contiene `paper.log`, `senales.csv`, `operaciones.csv`, `equity.csv` y `estado.json`. El estado se conserva: si lo detienes, sigue donde quedó. **No envía órdenes a ningún broker.** Para leer el log en PowerShell: `Get-Content logs\paper\paper.log -Encoding utf8 -Tail 20`.
