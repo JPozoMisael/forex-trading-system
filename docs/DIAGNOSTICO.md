@@ -24,7 +24,7 @@
 | # | Prioridad | Problema | Arreglo propuesto |
 |---|---|---|---|
 | P1 | Baja | No existe ejecución real con OANDA. **OANDA no acepta clientes de Ecuador**, así que deja de ser prioridad | Broker demo alternativo: XM (MT5, ya soportado) si acepta Ecuador |
-| P10 | Alta | El sistema desplegado (Linux/Dokploy) no tiene fuente de datos utilizable: OANDA no está disponible y MT5 solo corre en Windows | `DukascopyClient(MarketDataClient)` en el data-collector, reutilizando `_fetch_dukascopy_mid` |
+| P10 | ✅ | El sistema desplegado no tenía fuente de datos utilizable (OANDA no disponible, MT5 solo Windows) | Resuelto 2026-10-27: `MARKET_DATA_PROVIDER=dukascopy` (`shared/dukascopy.py`, `DukascopyClient`) |
 | P2 | Alta | El backtester no tiene validación estadística: no separa in-sample y out-of-sample ni tiene test de permutación, y no hay forma de saber si una estrategia tiene ventaja real | `validation.py`: walk-forward + permutación + bootstrap del Colab (fase 4 de [PLAN_INTEGRACION_COLAB.md](PLAN_INTEGRACION_COLAB.md)) |
 | P3 | Media | `shared/config.py` usa `mt5` como proveedor por defecto, pero `.env.example` y el despliegue usan `oanda` | Alinear el default |
 | P4 | Media | Dockerfiles heterogéneos: el raíz (el que usa Dokploy) y `data-collector` usan Python 3.13, el resto 3.12 | Unificar versión o borrar los Dockerfiles por servicio si ya no se usan |

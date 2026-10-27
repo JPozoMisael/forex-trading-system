@@ -42,9 +42,15 @@ def build_market_client() -> MarketDataClient:
         client = OandaClient()
         log.info("✅ Usando OANDA como fuente de datos")
 
+    elif provider == "dukascopy":
+        # Gratis y sin cuenta; corre en Linux/Docker. Solo datos: con DRY_RUN=true se simula la ejecución.
+        from shared.dukascopy import DukascopyClient
+        client = DukascopyClient()
+        log.info("✅ Usando Dukascopy como fuente de datos (sin credenciales)")
+
     else:
         raise ValueError(
-            f"MARKET_DATA_PROVIDER='{provider}' no soportado. Usa 'mt5' (XM) u 'oanda', "
+            f"MARKET_DATA_PROVIDER='{provider}' no soportado. Usa 'dukascopy', 'mt5' (XM) u 'oanda', "
             f"o agrega la rama correspondiente en build_market_client()."
         )
 

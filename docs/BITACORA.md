@@ -5,6 +5,13 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-27 (paso 2: Dukascopy en el pipeline desplegado) · DESKTOP-RC7UDV1
+
+- `shared/dukascopy.py` es la única implementación de la descarga: la usan el backtester (`data_loader.py`) y el nuevo `DukascopyClient(MarketDataClient)`.
+- `MARKET_DATA_PROVIDER=dukascopy` en el data-collector (P10 resuelto). Sin credenciales. Probado en real: backfill de 1000 velas H1 en ~3 s, solo velas cerradas, precio bid/ask de 1 minuto.
+- `.env.production.example` y `.env.example` usan `dukascopy` por defecto. Dependencia `dukascopy-python` en `services/data-collector/requirements.txt`.
+- **Pendiente en Dokploy:** `git push` y *Redeploy* (la variable `MARKET_DATA_PROVIDER=dukascopy` ya estaba puesta). El strategy-engine sigue con `ma_crossover` y `mean_reversion`, que no tienen ventaja; con `DRY_RUN=true` solo simula.
+
 ## 2026-10-27 (paso 1: mejorar el modelo) · DESKTOP-RC7UDV1
 
 - **Protocolo anti-sobreajuste** (commit `f9a7a9c`, hecho ANTES de correr nada):

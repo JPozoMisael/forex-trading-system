@@ -90,6 +90,38 @@ def test_refresh_false_reads_cache_without_network(fake_dk, tmp_path):
     assert len(cached) > 0
 
 
+def test_dukascopy_client_returns_closed_mid_candles(fake_dk):
+    from shared.dukascopy import DukascopyClient
+    from shared.models import Candle
+
+    client = DukascopyClient()
+    assert client.connect()
+    candles = client.get_latest_candles("EUR_USD", "H1", count=50)
+    assert len(candles) == 50
+    assert all(isinstance(c, Candle) and c.complete and c.pair == "EUR_USD" for c in candles)
+    now = datetime.now(timezone.utc)
+    assert candles[-1].timestamp + pd.Timedelta(hours=1) <= pd.Timestamp(now)
+    assert [c.timestamp for c in candles] == sorted(c.timestamp for c in candles)
+
+
+def test_data_collector_builds_dukascopy_client(fake_dk, monkeypatch):
+    import dataclasses
+    import importlib.util
+    from pathlib import Path
+
+    from shared.dukascopy import DukascopyClient
+
+    # Cada servicio tiene su main.py: se carga el del data-collector por ruta
+    path = Path(__file__).resolve().parents[1] / "services" / "data-collector" / "src" / "main.py"
+    spec = importlib.util.spec_from_file_location("data_collector_main", path)
+    collector_main = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(collector_main)
+
+    monkeypatch.setattr(collector_main, "settings",
+                        dataclasses.replace(collector_main.settings, market_data_provider="dukascopy"))
+    assert isinstance(collector_main.build_market_client(), DukascopyClient)
+
+
 def test_unsupported_granularity_raises(tmp_path):
     with pytest.raises(ValueError):
         load_from_dukascopy("EUR_USD", "S5", data_dir=tmp_path)
