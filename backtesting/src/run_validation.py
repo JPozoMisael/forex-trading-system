@@ -24,12 +24,29 @@ from data_loader import load_from_dukascopy
 from shared.config import load_trading_config
 from strategies.ma_crossover import MACrossoverStrategy
 from strategies.mean_reversion import MeanReversionStrategy
-from validation import ValidationReport, validate
+from strategies.ml_strategy import MLStrategy
+from validation import ValidationReport, Window, validate
 
 RULE_STRATEGIES = {
     "ma_crossover": lambda train, w: MACrossoverStrategy(fast_period=9, slow_period=21, trend_period=200, use_trend_filter=True),
     "mean_reversion": lambda train, w: MeanReversionStrategy(bb_period=20, bb_std=2.0, rsi_period=14),
 }
+
+
+def ml_factory(df: pd.DataFrame, cfg: dict, pair: str):
+    """Reentrena el modelo en cada ventana SOLO con el pasado (train) y precalcula sus probabilidades."""
+    def factory(train: pd.DataFrame, w: Window) -> MLStrategy:
+        strategy = MLStrategy.train(train, cfg, pair)
+        # Features causales: calcularlas de una vez hasta el fin de la ventana da lo mismo que en vivo
+        return strategy.precompute(df[df.index < w.test_end])
+    return factory
+
+
+def build_factories(names, df, cfg, pair):
+    factories = {}
+    for name in names:
+        factories[name] = ml_factory(df, cfg, pair) if name == "ml" else RULE_STRATEGIES[name]
+    return factories
 
 
 def print_report(report: ValidationReport):
@@ -62,6 +79,17 @@ def print_report(report: ValidationReport):
     table.index = [f"{r['ventana']}: {r['desde']:%Y-%m}→{r['hasta']:%Y-%m}" for r in first.per_window]
     print(table.to_string())
 
+    for name, res in report.results.items():
+        if not res.diagnostics:
+            continue
+        print(f"\nCalidad del clasificador ({name}) en cada ventana de prueba:")
+        diag = pd.DataFrame.from_dict(res.diagnostics, orient="index")
+        cols = ["muestras", "tasa_base_long", "senales_long", "precision_long", "accuracy_long", "accuracy_trivial_long",
+                "tasa_base_short", "senales_short", "precision_short", "accuracy_short", "accuracy_trivial_short"]
+        print(diag[cols].round(3).to_string())
+        print("  precision = % de señales que tocaron el TP antes que el SL; el modelo aporta si supera a la tasa base.")
+        print("  accuracy_trivial = acierto de predecir siempre la clase mayoritaria; el modelo aporta si lo supera.")
+
     print("\nVeredicto (permutación con la operación opuesta + bootstrap de la expectativa):")
     for name, v in report.verdicts.items():
         print(f"  - {name}: {v.label} | {v.n_trades} ops | expectativa {v.expectancy_r:+.3f} R | "
@@ -71,8 +99,8 @@ def print_report(report: ValidationReport):
 
 def main():
     parser = argparse.ArgumentParser(description="Validación walk-forward fuera de muestra")
-    parser.add_argument("--strategies", default="ma_crossover,mean_reversion",
-                        help=f"Separadas por coma: {', '.join(RULE_STRATEGIES)}")
+    parser.add_argument("--strategies", default="ml,ma_crossover",
+                        help=f"Separadas por coma: ml, {', '.join(RULE_STRATEGIES)}")
     args = parser.parse_args()
 
     cfg = load_trading_config()
@@ -80,7 +108,7 @@ def main():
     df = load_from_dukascopy(pair, gran, years=cfg["mercado"]["anios_historia"])
     print(f"[v] {pair} {gran}: {len(df)} velas [{df.index[0]:%Y-%m-%d} a {df.index[-1]:%Y-%m-%d}]")
 
-    factories = {name: RULE_STRATEGIES[name] for name in args.strategies.split(",")}
+    factories = build_factories(args.strategies.split(","), df, cfg, pair)
     report = validate(df, factories, pair, gran, cfg)
     print_report(report)
 

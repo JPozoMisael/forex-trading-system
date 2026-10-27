@@ -5,6 +5,27 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-27 (noche) · DESKTOP-RC7UDV1
+
+- **Fase 4, validación** (`backtesting/src/validation.py`, `run_validation.py`, `config.yaml`): walk-forward con ventana creciente (3 años de entrenamiento y ventanas de prueba de 6 meses; 6 ventanas de 2023-10 a 2026-10), saldo encadenado, líneas base (no operar y buy & hold), permutación contra la operación opuesta, bootstrap y veredicto del Colab.
+- **Fase 5, modelo** (`services/strategy-engine/src/ml/`, `strategies/ml_strategy.py`):
+  - Features causales y target de triple barrera con SL 2 ATR, TP 3 ATR, horizonte de 48 velas y costos.
+  - Dos LightGBM (compras y ventas); umbral de 0.50, fijado antes de ver resultados (punto de equilibrio ≈ 0.45).
+  - `MLStrategy` hereda de `BaseStrategy`. Hay tests de que no hay fuga de datos (`tests/test_ml.py`).
+- **Resultado fuera de muestra (costos reales), el modelo NO supera a las líneas base:**
+
+  | Estrategia | Retorno | Max DD | Profit factor | Ops | Veredicto |
+  |---|---|---|---|---|---|
+  | Sin operar | 0 % | 0 % | – | 0 | – |
+  | Buy & Hold | +5.3 % | 9.1 % | – | 6 | – |
+  | **ML LightGBM** | **−16.0 %** | 30.2 % | 0.96 | 569 | SIN VENTAJA (−0.023 R, IC [−0.12, +0.08], p = 0.079) |
+  | ma_crossover | −36.3 % | 47.0 % | 0.86 | 402 | SIN VENTAJA |
+
+  La accuracy del clasificador (~0.62) no supera a la de predecir siempre la clase mayoritaria (0.61–0.68) en 11 de 12 casos. La precisión de las señales casi nunca llega al 44.6 % de equilibrio.
+- **Siguiente paso:** fases 6 y 7 (informe con gráfico, paper trading y pipeline en un comando), para tener el flujo completo. Después, mejorar el modelo sin mirar el periodo de prueba (por ejemplo, reservar las últimas ventanas como prueba final intocable).
+
+---
+
 ## 2026-10-27 (tarde) · DESKTOP-RC7UDV1
 
 - **OANDA no acepta clientes de Ecuador** (la solicitud de cuenta redirige a FTMO). Se descarta como fuente y como broker.

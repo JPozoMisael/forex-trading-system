@@ -56,11 +56,11 @@ Cada fase se cierra con tests verdes y una entrada en [BITACORA.md](BITACORA.md)
 1. ✅ **Traer la fuente**: el script completo está en `research/colab/` (2026-10-26).
 2. ✅ **Costos y ejecución realistas** en el backtester (2026-10-27, `9ddf2bf`): spread completo, slippage en todas las salidas, comisión, entrada a la apertura siguiente, SL si SL y TP caen en la misma vela, límite de pérdida diaria. *Pendiente:* tabla de spread y slippage por símbolo (va con la fase 7).
 3. ✅ **Datos** (2026-10-27): Dukascopy es la fuente única para entrenar, hacer backtest y paper trading, porque OANDA no acepta clientes de Ecuador. Precio medio desde bid/ask, caché en `data/` como parquet, `scripts/descargar_datos.py`. EUR_USD H1 desde 2020-10.
-4. **Validación** → `backtesting/src/validation.py`, sirve para cualquier `BaseStrategy`:
+4. ✅ **Validación** (2026-10-27) → `backtesting/src/validation.py`, sirve para cualquier `BaseStrategy`:
    - **Walk-forward** por ventanas, con un hueco entre entrenamiento y prueba igual al horizonte del modelo.
    - Del Colab: **test de permutación**, **intervalo de confianza por bootstrap** y **veredicto** (`VENTAJA CON EVIDENCIA` / `SOLO DEMO`).
    - Siempre contra tres **líneas base**: no operar, buy & hold y `ma_crossover`, todas con costos.
-5. **Modelo predictivo** → `MLStrategy(BaseStrategy)`, igual en el backtester y en el strategy-engine:
+5. ✅ **Modelo predictivo** (2026-10-27; primera versión SIN VENTAJA fuera de muestra, ver bitácora) → `MLStrategy(BaseStrategy)`, igual en el backtester y en el strategy-engine:
    - Features calculadas solo con velas cerradas: retornos, ATR, RSI, distancia a EMAs, volatilidad, hora y día.
    - Target de **triple barrera**: ¿toca primero el TP o el SL (en múltiplos de ATR) dentro de N velas?
    - LightGBM, que solo opera si la probabilidad supera un umbral configurable.

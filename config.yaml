@@ -30,7 +30,10 @@ riesgo:
 
 modelo:
   horizonte_velas: 48           # el target mira si toca TP o SL dentro de N velas
-  umbral_probabilidad: 0.55     # solo opera si P(TP antes que SL) supera este valor
+  # Solo opera si P(TP antes que SL) >= umbral. Punto de equilibrio con TP/SL = 1.5
+  # y costos de ~0.12 R por operación: p * 1.5 - (1 - p) - 0.12 = 0  ->  p ~ 0.45.
+  # 0.50 exige margen sobre ese punto. Fijado antes de ver resultados del modelo.
+  umbral_probabilidad: 0.50
   semilla: 42
   lightgbm:
     n_estimators: 300
