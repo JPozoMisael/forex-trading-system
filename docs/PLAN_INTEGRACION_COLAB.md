@@ -43,17 +43,36 @@ El script de Colab es un sistema "todo en uno": descarga datos, valida, genera l
 9. **Operar a mano en la misma cuenta**: las "órdenes de hoy" son para ejecutarlas manualmente. Si el execution-engine corre en la misma cuenta MT5, las posiciones manuales no tienen el `MT5_MAGIC` del sistema y no se reconcilian, pero sí consumen margen y equity, y pueden disparar el circuit breaker diario. Usar cuentas demo separadas o integrar todo en el pipeline.
 10. **Dependencias que se instalan solas**: el script hace `pip install` al arrancar. En el repo van en `backtesting/requirements.txt` (`reportlab`, `dukascopy-python`).
 
-## Fases propuestas
+## Fases (plan combinado, 2026-10-27)
+
+Une las fases originales de este plan con el **MVP del modelo predictivo** (LightGBM). La validación
+es la pieza central: cualquier estrategia (EMA, Bollinger, ML o SMC) pasa por el mismo backtester y
+la misma validación, y solo la que demuestre ventaja fuera de muestra se activa, primero en demo.
 
 Cada fase se cierra con tests verdes y una entrada en [BITACORA.md](BITACORA.md).
 
+**MVP: primero algo que funcione de punta a punta (EUR_USD H1, OANDA demo)**
+
 1. ✅ **Traer la fuente**: el script completo está en `research/colab/` (2026-10-26).
-2. **Validación estadística** → `backtesting/src/validation.py`: corte IS/OOS, permutación, bootstrap, veredicto. Sirve para cualquier estrategia, así que primero se aplica a `ma_crossover` y `mean_reversion` existentes. *Es lo que más sube el nivel del sistema.*
-3. **Costos por símbolo** en el backtester (tabla de spread + slippage, convertido a R).
-4. **Dukascopy** como `--source dukascopy` en `backtesting/src/data_loader.py`, con caché en `data/` (ya ignorada por git).
-5. **Informes** → `backtesting/src/report.py`: gráficos PNG + PDF (`reportlab`) + resumen markdown en `reports/` (sin versionar).
-6. **Generalizar símbolos** (P5): pip y contrato por símbolo para XAUUSD y BTCUSD, en `shared/fx.py`.
-7. **Estrategia SMC** como `BaseStrategy` (modo `confirmacion` primero, que es a mercado y encaja con el pipeline actual). Activarla en vivo **solo** si la fase 2 da `VENTAJA CON EVIDENCIA`.
-8. **Órdenes limitadas** (`limite`, `fibo`): requieren soportar órdenes pendientes en `Broker`, `order_manager` y reconciliación. Es el cambio más grande, así que se deja para el final.
-9. **Grafana**: paneles con las métricas de validación y la equity de la cartera aprobada.
-10. **Informe diario automático**: a la apertura de Londres, generar el PDF (análisis por activo, órdenes y veredicto) y enviarlo por Telegram desde `monitoring`. Así lo que hoy se hace a mano en Colab queda programado.
+2. ✅ **Costos y ejecución realistas** en el backtester (2026-10-27, `9ddf2bf`): spread completo, slippage en todas las salidas, comisión, entrada a la apertura siguiente, SL si SL y TP caen en la misma vela, límite de pérdida diaria. *Pendiente:* tabla de spread y slippage por símbolo (va con la fase 7).
+3. **Datos** en `data/` como parquet: `--source oanda` (≥ 5 años de H1, precio `M`) es la fuente única para entrenar, hacer backtest y paper trading. `--source dukascopy` queda como respaldo si OANDA falla.
+4. **Validación** → `backtesting/src/validation.py`, sirve para cualquier `BaseStrategy`:
+   - **Walk-forward** por ventanas, con un hueco entre entrenamiento y prueba igual al horizonte del modelo.
+   - Del Colab: **test de permutación**, **intervalo de confianza por bootstrap** y **veredicto** (`VENTAJA CON EVIDENCIA` / `SOLO DEMO`).
+   - Siempre contra tres **líneas base**: no operar, buy & hold y `ma_crossover`, todas con costos.
+5. **Modelo predictivo** → `MLStrategy(BaseStrategy)`, igual en el backtester y en el strategy-engine:
+   - Features calculadas solo con velas cerradas: retornos, ATR, RSI, distancia a EMAs, volatilidad, hora y día.
+   - Target de **triple barrera**: ¿toca primero el TP o el SL (en múltiplos de ATR) dentro de N velas?
+   - LightGBM, que solo opera si la probabilidad supera un umbral configurable.
+6. **Informe** → `backtesting/src/report.py`: curva de equity (PNG) y tabla de métricas por ventana en `reports/`. El PDF con `reportlab` viene después.
+7. **Paper trading** independiente: script con OANDA demo, sin Docker, con log en archivos. `config.yaml` (par, temporalidad, modelo, riesgo, costos) cargado desde `shared/config.py`; claves solo en `.env`. Pipeline en un comando (entrenar → validar → señales) y README.
+
+**Después del MVP**
+
+8. **Generalizar símbolos** (P5): pip y contrato por símbolo para XAUUSD y BTCUSD, en `shared/fx.py`.
+9. **Estrategia SMC** como `BaseStrategy` (modo `confirmacion` primero, que es a mercado y encaja con el pipeline actual). Pasa por la misma validación que el modelo; se activa en vivo **solo** si da `VENTAJA CON EVIDENCIA`.
+10. **Guardar validaciones en la BD** (`backtest_runs`, `backtest_trades`), además de en `reports/`.
+11. **`OandaBroker`** (P1), para operar la cuenta demo de OANDA desde el pipeline de microservicios.
+12. **Órdenes limitadas** (`limite`, `fibo`): requieren soportar órdenes pendientes en `Broker`, `order_manager` y reconciliación. Es el cambio más grande, así que se deja para el final.
+13. **Grafana**: paneles con las métricas de validación y la equity de la cartera aprobada.
+14. **Informe diario automático**: a la apertura de Londres, generar el PDF (análisis por activo, órdenes y veredicto) y enviarlo por Telegram desde `monitoring`. Así lo que hoy se hace a mano en Colab queda programado.

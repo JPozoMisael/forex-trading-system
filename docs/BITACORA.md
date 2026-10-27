@@ -5,6 +5,14 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-27 · DESKTOP-RC7UDV1
+
+- **Backtester con costos y ejecución realistas** (`backtesting/src/engine.py`, commit `9ddf2bf`): spread completo (compra al ask, vende al bid sobre velas de precio medio), slippage en entrada y en todas las salidas, comisión por lote, entrada a la **apertura de la vela siguiente** a la señal, SL si SL y TP caen en la misma vela (un gap llena a la apertura) y límite de pérdida diaria igual que el circuit breaker en vivo. CLI: `--slippage`, `--commission`, `--max-daily-loss`. Un test por regla en `tests/test_backtester_execution.py` (62 tests pasan).
+- `infra/postgres/00_create_database.sql`: crea el usuario `forex` y la BD vacía en un Postgres propio (paso previo a `init_db.py`).
+- Diagnóstico de este equipo: falta `.env`; Docker, Postgres, Redis y MT5 no disponibles.
+- El plan del Colab y el del modelo predictivo se unieron en uno solo: ver "Fases (plan combinado)" en [PLAN_INTEGRACION_COLAB.md](PLAN_INTEGRACION_COLAB.md).
+- **Siguiente paso:** crear `.env` con el token de OANDA (cuenta demo) y hacer la fase 3 (descargar ≥ 5 años de EUR_USD H1 a `data/`).
+
 ## 2026-10-27 · DESKTOP-PL88VOS
 
 - **Base de datos v2** (`infra/postgres/init.sql`): funciona con PostgreSQL normal o con TimescaleDB, se puede ejecutar varias veces y fija UTC. Tiene restricciones, una segunda barrera de "un trade por par", `r_multiple` por orden, 4 tablas preparadas (`account_snapshots`, `risk_events`, `backtest_runs`, `backtest_trades`) y 7 vistas. Guía en `docs/BASE_DE_DATOS.md`.

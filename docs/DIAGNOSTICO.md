@@ -4,7 +4,7 @@
 > `python scripts/diagnostico.py --guardar` y queda en [diagnosticos/](diagnosticos/).
 > Actualizar este archivo cada vez que se cierre o aparezca un pendiente.
 
-**Última revisión:** 2026-10-26 · commit `1c149af` · 50 tests pasan, 1 omitido (falta `fakeredis`).
+**Última revisión:** 2026-10-27 · commit `9ddf2bf` · 62 tests pasan.
 
 ## 1. Qué funciona hoy
 
@@ -17,14 +17,14 @@
 | Alertas Telegram / email, health check | ✅ | `services/monitoring/src/` |
 | Dashboard Grafana | ✅ básico | `infra/grafana/dashboards/trading_overview.json` |
 | Despliegue de los 5 servicios en un solo contenedor (Dokploy) | ✅ | `Dockerfile` raíz + `scripts/run_all.py` |
-| Backtester (MT5 / BD / CSV / sintético) | ⚠️ básico | `backtesting/src/` |
+| Backtester (MT5 / BD / CSV / sintético) con spread completo, slippage, comisión, entrada a la apertura siguiente y límite de pérdida diaria | ⚠️ sin validación estadística (P2) | `backtesting/src/` |
 
 ## 2. Problemas conocidos
 
 | # | Prioridad | Problema | Arreglo propuesto |
 |---|---|---|---|
 | P1 | Alta | No existe ejecución real con OANDA: con `MARKET_DATA_PROVIDER=oanda` solo funciona `DRY_RUN=true` | Implementar `OandaBroker(Broker)` en `brokers.py` |
-| P2 | Alta | El backtester no tiene validación estadística: no separa in-sample y out-of-sample ni tiene test de permutación, y no hay forma de saber si una estrategia tiene ventaja real | Portar la validación del script de Colab (ver [PLAN_INTEGRACION_COLAB.md](PLAN_INTEGRACION_COLAB.md)) |
+| P2 | Alta | El backtester no tiene validación estadística: no separa in-sample y out-of-sample ni tiene test de permutación, y no hay forma de saber si una estrategia tiene ventaja real | `validation.py`: walk-forward + permutación + bootstrap del Colab (fase 4 de [PLAN_INTEGRACION_COLAB.md](PLAN_INTEGRACION_COLAB.md)) |
 | P3 | Media | `shared/config.py` usa `mt5` como proveedor por defecto, pero `.env.example` y el despliegue usan `oanda` | Alinear el default |
 | P4 | Media | Dockerfiles heterogéneos: el raíz (el que usa Dokploy) y `data-collector` usan Python 3.13, el resto 3.12 | Unificar versión o borrar los Dockerfiles por servicio si ya no se usan |
 | P5 | Media | El backtester solo acepta pares con USD; no soporta cruces, oro (XAUUSD) ni BTC | Generalizar `shared/fx.py` (pip y contrato por símbolo) |
