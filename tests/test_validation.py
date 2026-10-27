@@ -41,6 +41,50 @@ def test_short_tail_is_merged_into_last_window():
     assert windows[0].test_end > idx[-1]
 
 
+def test_final_windows_start_at_cutoff():
+    idx = hourly_index(years=5)
+    cutoff = pd.Timestamp("2024-01-01", tz="UTC")
+    windows = make_windows(idx, initial_train_years=3, test_months=6, first_test_start=cutoff)
+    assert windows[0].test_start == cutoff
+    assert windows[0].train_start == idx[0]
+
+
+def test_development_period_never_sees_final_data():
+    from validation import validate
+
+    idx = hourly_index(years=1)
+    df = pd.DataFrame({"open": 1.1, "high": 1.1005, "low": 1.0995, "close": 1.1}, index=idx)
+    cfg = {
+        "costes": {"spread_pips": 1.0, "slippage_pips": 0.3, "comision_por_lote": 7.0},
+        "riesgo": {"capital_inicial": 10000, "riesgo_por_operacion_pct": 1.0, "perdida_diaria_max_pct": 5.0},
+        "validacion": {"entrenamiento_inicial_anios": 0.25, "ventana_prueba_meses": 2, "n_permutaciones": 50,
+                       "min_operaciones": 5, "expectativa_minima_r": 0.05, "inicio_prueba_final": "2020-09-01"},
+    }
+    seen = []
+
+    def factory(train, w):
+        seen.append((train.index[-1], w.test_end))
+        return AlwaysBuy()
+
+    report = validate(df, {"s": factory}, "EUR_USD", "H1", cfg, log=lambda m: None, periodo="desarrollo")
+    cutoff = pd.Timestamp("2020-09-01", tz="UTC")
+    assert all(w.test_end <= cutoff for w in report.windows)
+    assert all(last < cutoff for last, _ in seen)
+    assert report.results["s"].equity.index.max() < cutoff
+
+
+def test_selection_rule():
+    from run_experiments import select_variant
+
+    rows = [
+        {"variante": "a", "operaciones": 500, "expectativa_r": 0.02},
+        {"variante": "b", "operaciones": 50, "expectativa_r": 0.30},   # pocas operaciones
+        {"variante": "c", "operaciones": 300, "expectativa_r": 0.05},
+    ]
+    assert select_variant(rows) == "c"
+    assert select_variant([{"variante": "a", "operaciones": 500, "expectativa_r": -0.01}]) is None
+
+
 class AlwaysBuy(BaseStrategy):
     def __init__(self):
         super().__init__(name="AlwaysBuy")

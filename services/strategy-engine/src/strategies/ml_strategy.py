@@ -64,23 +64,27 @@ class MLStrategy(BaseStrategy):
     def train(cls, train_df: pd.DataFrame, cfg: Dict[str, Any], pair: str) -> "MLStrategy":
         """Entrena con las velas de `train_df` (solo pasado) y devuelve la estrategia lista."""
         r, m, c = cfg["riesgo"], cfg["modelo"], cfg["costes"]
-        features = build_features(train_df, int(r["atr_periodo"]))
+        conjunto = m.get("features", "base")
+        features = build_features(train_df, int(r["atr_periodo"]), conjunto)
         atr = calculate_atr(train_df["high"], train_df["low"], train_df["close"], int(r["atr_periodo"]))
         labels = triple_barrier_labels(
             train_df, atr, int(m["horizonte_velas"]), float(r["sl_atr"]), float(r["tp_atr"]), pair,
             float(c["spread_pips"]), float(c["slippage_pips"]),
         )
-        model = TradeModel(m.get("lightgbm"), seed=int(m.get("semilla", 42))).fit(features, labels)
+        model = TradeModel(m.get("lightgbm"), seed=int(m.get("semilla", 42)), conjunto=conjunto).fit(features, labels)
         return cls.from_config(model, cfg, pair)
 
     @property
     def min_candles_required(self) -> int:
-        return WARMUP_BARS
+        return getattr(self.model, "warmup_bars", WARMUP_BARS)
 
     @property
     def lookback_window(self) -> int:
         # Historia que recibe evaluate(): de sobra para que la EMA 200 converja.
         return 1000
+
+    def _features(self, df: pd.DataFrame) -> pd.DataFrame:
+        return build_features(df, self.atr_period, getattr(self.model, "conjunto", "base"))
 
     def precompute(self, df: pd.DataFrame) -> "MLStrategy":
         """
@@ -88,14 +92,14 @@ class MLStrategy(BaseStrategy):
         las velas de `df`. Las features son causales, así que el valor de cada
         vela es el mismo que se obtendría en vivo con la historia hasta ella.
         """
-        self._cache = self.model.predict_proba(build_features(df, self.atr_period))
+        self._cache = self.model.predict_proba(self._features(df))
         return self
 
     def probabilities(self, df: pd.DataFrame) -> pd.Series:
         ts = df.index[-1]
         if self._cache is not None and ts in self._cache.index:
             return self._cache.loc[ts]
-        return self.model.predict_proba(build_features(df, self.atr_period).iloc[[-1]]).iloc[0]
+        return self.model.predict_proba(self._features(df).iloc[[-1]]).iloc[0]
 
     def evaluate(self, df: pd.DataFrame, pair: str) -> Optional[Signal]:
         if not self.validate_dataframe(df):
@@ -139,7 +143,7 @@ class MLStrategy(BaseStrategy):
         atr = calculate_atr(df["high"], df["low"], df["close"], self.atr_period)
         labels = triple_barrier_labels(df, atr, self.horizon, self.sl_atr, self.tp_atr, self.pair,
                                        self.spread_pips, self.slippage_pips)
-        proba = self._cache if self._cache is not None else self.model.predict_proba(build_features(df, self.atr_period))
+        proba = self._cache if self._cache is not None else self.model.predict_proba(self._features(df))
         data = proba.join(labels).loc[test_start:].dropna()
         out: Dict[str, Any] = {"muestras": len(data)}
         for side in ("long", "short"):

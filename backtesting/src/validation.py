@@ -99,14 +99,19 @@ class ActiveFrom(BaseStrategy):
         return self.inner.evaluate(df, pair)
 
 
-def make_windows(index: pd.DatetimeIndex, initial_train_years: float, test_months: int) -> List[Window]:
+def make_windows(index: pd.DatetimeIndex, initial_train_years: float, test_months: int,
+                 first_test_start: Optional[pd.Timestamp] = None) -> List[Window]:
     """
     Ventanas consecutivas de prueba; el entrenamiento siempre empieza en el
-    primer dato. Un sobrante final de menos de un mes se une a la última ventana.
+    primer dato. La primera prueba empieza tras `initial_train_years` o en
+    `first_test_start` si se indica. Un sobrante final de menos de un mes se une
+    a la última ventana.
     """
     first, end = index[0], index[-1] + pd.Timedelta(seconds=1)
     # En meses: DateOffset no acepta años fraccionarios (p.ej. 2.5 en config.yaml)
     test_start = first + pd.DateOffset(months=max(1, int(round(initial_train_years * 12))))
+    if first_test_start is not None:
+        test_start = max(test_start, first_test_start)
     windows = []
     while test_start < end:
         test_end = min(test_start + pd.DateOffset(months=test_months), end)
@@ -241,11 +246,25 @@ def validate(
     granularity: str,
     cfg: Dict[str, Any],
     log: Callable[[str], None] = print,
+    periodo: Optional[str] = None,
 ) -> ValidationReport:
     """
     Corre el walk-forward para cada estrategia de `factories` más las líneas
     base (no operar, buy & hold). `cfg` es el contenido de config.yaml.
+
+    periodo (con `validacion.inicio_prueba_final` en config.yaml):
+      "desarrollo": solo velas ANTERIORES al corte. Es donde se comparan
+                    variantes; la prueba final ni se carga.
+      "final":      ventanas de prueba desde el corte (el entrenamiento usa
+                    todo lo anterior). Se corre una vez con la variante elegida.
+      None:         todas las velas.
     """
+    if periodo is not None:
+        cutoff = pd.Timestamp(cfg["validacion"]["inicio_prueba_final"], tz="UTC")
+        if periodo == "desarrollo":
+            df = df[df.index < cutoff]
+        elif periodo != "final":
+            raise ValueError(f"periodo debe ser 'desarrollo', 'final' o None (no '{periodo}')")
     costs = {
         "spread_pips": float(cfg["costes"]["spread_pips"]),
         "slippage_pips": float(cfg["costes"]["slippage_pips"]),
@@ -258,7 +277,8 @@ def validate(
     )
     capital = float(cfg["riesgo"]["capital_inicial"])
     val = cfg["validacion"]
-    windows = make_windows(df.index, val["entrenamiento_inicial_anios"], int(val["ventana_prueba_meses"]))
+    windows = make_windows(df.index, val["entrenamiento_inicial_anios"], int(val["ventana_prueba_meses"]),
+                           first_test_start=cutoff if periodo == "final" else None)
     if not windows:
         raise ValueError("No hay datos suficientes para ninguna ventana de prueba")
 

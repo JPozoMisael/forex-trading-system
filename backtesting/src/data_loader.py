@@ -97,12 +97,16 @@ def load_from_dukascopy(
     if not refresh:
         return cached
 
+    wanted_start = now - timedelta(days=365.25 * years)
     if cached.empty:
-        start = now - timedelta(days=365.25 * years)
+        fresh = _fetch_dukascopy_mid(pair, granularity, wanted_start, now)
     else:
         # Se vuelve a pedir la última vela guardada por si quedó a medio consolidar.
-        start = cached.index[-1].to_pydatetime()
-    fresh = _fetch_dukascopy_mid(pair, granularity, start, now)
+        fresh = _fetch_dukascopy_mid(pair, granularity, cached.index[-1].to_pydatetime(), now)
+        # Si ahora se piden más años que los guardados, se completa la historia hacia atrás.
+        if cached.index[0].to_pydatetime() - wanted_start > timedelta(days=7):
+            older = _fetch_dukascopy_mid(pair, granularity, wanted_start, cached.index[0].to_pydatetime())
+            fresh = pd.concat([older, fresh])
 
     df = pd.concat([cached, fresh]) if not cached.empty else fresh
     if df.empty:

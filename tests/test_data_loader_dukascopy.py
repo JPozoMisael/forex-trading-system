@@ -73,6 +73,15 @@ def test_cache_is_saved_and_updated_incrementally(fake_dk, tmp_path):
     assert updated.index.is_monotonic_increasing
 
 
+def test_cache_is_extended_backwards_when_more_years_are_requested(fake_dk, tmp_path):
+    short = load_from_dukascopy("EUR_USD", "H1", years=0.01, data_dir=tmp_path, now=NOW)
+    longer = load_from_dukascopy("EUR_USD", "H1", years=0.05, data_dir=tmp_path, now=NOW)
+    assert longer.index[0] < short.index[0]
+    assert longer.index[-1] == short.index[-1]
+    assert not longer.index.has_duplicates
+    assert longer.index.is_monotonic_increasing
+
+
 def test_refresh_false_reads_cache_without_network(fake_dk, tmp_path):
     load_from_dukascopy("EUR_USD", "H1", years=0.01, data_dir=tmp_path, now=NOW)
     fake_dk.calls.clear()

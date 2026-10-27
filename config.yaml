@@ -11,7 +11,7 @@ mercado:
   par: EUR_USD
   temporalidad: H1
   fuente: dukascopy
-  anios_historia: 6
+  anios_historia: 15            # Dukascopy: EUR_USD H1 desde 2012
 
 # Costes de un broker minorista (no el spread institucional de Dukascopy)
 costes:
@@ -34,6 +34,7 @@ modelo:
   # y costos de ~0.12 R por operación: p * 1.5 - (1 - p) - 0.12 = 0  ->  p ~ 0.45.
   # 0.50 exige margen sobre ese punto. Fijado antes de ver resultados del modelo.
   umbral_probabilidad: 0.50
+  features: base                # base | extendido (contexto de temporalidades mayores)
   semilla: 42
   lightgbm:
     n_estimators: 300
@@ -51,6 +52,42 @@ validacion:
   n_permutaciones: 2000
   min_operaciones: 30              # menos operaciones fuera de muestra = veredicto INSUFICIENTE
   expectativa_minima_r: 0.05       # expectativa mínima por operación (en R) para hablar de ventaja
+  # Desde esta fecha empieza la PRUEBA FINAL: no se usa para comparar variantes,
+  # solo para evaluar una vez la elegida. Antes de esta fecha está el periodo de DESARROLLO.
+  # (Es el mismo periodo con el que se evaluó el modelo v1, así v1 y v2 se comparan igual.)
+  inicio_prueba_final: "2023-10-27"
+
+# Variantes que se comparan en el periodo de DESARROLLO (registradas antes de correrlas).
+# Cada una cambia solo lo que indica sobre la sección "modelo".
+# Regla de selección, fijada de antemano: la de mayor expectativa (R) en desarrollo con
+# >= 100 operaciones y expectativa > 0. Si ninguna la cumple, se mantiene v1 y se informa.
+experimentos:
+  v1_base: {}
+  v2_extendido:
+    features: extendido
+  v3_extendido_regularizado:
+    features: extendido
+    lightgbm:
+      n_estimators: 200
+      learning_rate: 0.02
+      num_leaves: 7
+      min_child_samples: 500
+      subsample: 0.7
+      subsample_freq: 1
+      colsample_bytree: 0.7
+      reg_lambda: 5.0
+  v4_regularizado_umbral_055:
+    features: extendido
+    umbral_probabilidad: 0.55
+    lightgbm:
+      n_estimators: 200
+      learning_rate: 0.02
+      num_leaves: 7
+      min_child_samples: 500
+      subsample: 0.7
+      subsample_freq: 1
+      colsample_bytree: 0.7
+      reg_lambda: 5.0
 
 paper_trading:
   carpeta_logs: logs/paper

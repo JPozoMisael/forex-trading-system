@@ -29,20 +29,30 @@ def candles():
     return df
 
 
-def test_features_do_not_change_when_future_changes(candles):
-    full = build_features(candles)
+@pytest.mark.parametrize("conjunto", ["base", "extendido"])
+def test_features_do_not_change_when_future_changes(candles, conjunto):
+    full = build_features(candles, conjunto=conjunto)
     cut = 2000
     altered = candles.copy()
     altered.iloc[cut:, :4] *= 1.5  # futuro completamente distinto
-    past_only = build_features(altered)
+    past_only = build_features(altered, conjunto=conjunto)
     pd.testing.assert_frame_equal(full.iloc[:cut], past_only.iloc[:cut])
-    assert list(full.columns) == FEATURE_COLUMNS
 
 
-def test_features_of_a_bar_only_need_history_up_to_it(candles):
-    full = build_features(candles)
-    truncated = build_features(candles.iloc[:1500])
+@pytest.mark.parametrize("conjunto", ["base", "extendido"])
+def test_features_of_a_bar_only_need_history_up_to_it(candles, conjunto):
+    full = build_features(candles, conjunto=conjunto)
+    truncated = build_features(candles.iloc[:1500], conjunto=conjunto)
     pd.testing.assert_frame_equal(full.iloc[:1500], truncated)
+
+
+def test_feature_sets_columns():
+    assert list(build_features(generate_synthetic_forex_data(n_candles=300)).columns) == FEATURE_COLUMNS
+    ext = build_features(generate_synthetic_forex_data(n_candles=300), conjunto="extendido")
+    assert list(ext.columns[: len(FEATURE_COLUMNS)]) == FEATURE_COLUMNS
+    assert "pos_rango_dia_anterior" in ext.columns
+    with pytest.raises(ValueError):
+        build_features(generate_synthetic_forex_data(n_candles=300), conjunto="inventado")
 
 
 def _bars(rows):
@@ -101,6 +111,17 @@ def test_cached_probabilities_match_live_evaluation(candles):
         p_cached = cached.probabilities(hist)
         assert p_live["p_long"] == pytest.approx(p_cached["p_long"], abs=1e-6)
         assert p_live["p_short"] == pytest.approx(p_cached["p_short"], abs=1e-6)
+
+
+def test_extended_model_remembers_its_features_and_matches_live(candles):
+    cfg = {**CFG, "modelo": {**CFG["modelo"], "features": "extendido"}}
+    strat = MLStrategy.train(candles.iloc[:2500], cfg, "EUR_USD")
+    assert strat.model.conjunto == "extendido"
+    assert strat.min_candles_required == 600
+    live = MLStrategy.from_config(strat.model, cfg, "EUR_USD")
+    cached = MLStrategy.from_config(strat.model, cfg, "EUR_USD").precompute(candles)
+    hist = candles.iloc[2999 + 1 - live.lookback_window: 3000]
+    assert live.probabilities(hist)["p_long"] == pytest.approx(cached.probabilities(hist)["p_long"], abs=1e-6)
 
 
 def test_signal_uses_configured_atr_multiples(candles):
