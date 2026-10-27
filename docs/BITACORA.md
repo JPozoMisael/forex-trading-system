@@ -11,7 +11,7 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 - **Fase 7, paper trading y pipeline:**
   - `backtesting/src/paper_trader.py` simula órdenes con las mismas reglas del backtester. Un test comprueba que da **las mismas operaciones** que el backtest, también tras reiniciarse.
   - `pipeline.py` hace todo con un comando: `datos`, `validar`, `entrenar`, `senales [--continuo]`. Logs y estado en `logs/paper/`; modelo en `models/`.
-  - README con instalación, configuración, uso y el resultado actual. 89 tests pasan.
+  - README con instalación, configuración, uso y el resultado actual. 86 tests pasan.
 - Arreglo: `make_windows` aceptaba solo años enteros (lo detectó `tests/test_report.py`).
 - **MVP de punta a punta terminado, pero el modelo no tiene ventaja.** Siguientes pasos posibles:
   1. Mejorar el modelo reservando el último año como prueba final intocable.
