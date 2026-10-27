@@ -1,0 +1,53 @@
+# ==========================================================================
+# Configuración del modelo, el backtest, la validación y el paper trading.
+# Las claves y contraseñas NO van aquí: van en .env (ver .env.example).
+#
+# Regla: estos valores se fijan ANTES de mirar resultados fuera de muestra.
+# Cambiarlos hasta que el backtest salga bien es sobreajustar (ver
+# docs/PLAN_INTEGRACION_COLAB.md, observación 5).
+# ==========================================================================
+
+mercado:
+  par: EUR_USD
+  temporalidad: H1
+  fuente: dukascopy
+  anios_historia: 6
+
+# Costes de un broker minorista (no el spread institucional de Dukascopy)
+costes:
+  spread_pips: 1.0
+  slippage_pips: 0.3            # por ejecución: entrada y salida
+  comision_por_lote: 7.0        # USD por lote estándar, ida y vuelta
+
+riesgo:
+  capital_inicial: 10000
+  riesgo_por_operacion_pct: 1.0
+  perdida_diaria_max_pct: 5.0
+  # SL y TP en múltiplos de ATR: los MISMOS para el target del modelo y la operación.
+  atr_periodo: 14
+  sl_atr: 2.0
+  tp_atr: 3.0                   # TP/SL = 1.5, el mínimo que exige el risk-manager en vivo
+
+modelo:
+  horizonte_velas: 48           # el target mira si toca TP o SL dentro de N velas
+  umbral_probabilidad: 0.55     # solo opera si P(TP antes que SL) supera este valor
+  semilla: 42
+  lightgbm:
+    n_estimators: 300
+    learning_rate: 0.03
+    num_leaves: 15
+    min_child_samples: 200
+    subsample: 0.8
+    subsample_freq: 1
+    colsample_bytree: 0.8
+    reg_lambda: 1.0
+
+validacion:
+  entrenamiento_inicial_anios: 3   # la primera ventana entrena con los primeros 3 años
+  ventana_prueba_meses: 6          # luego prueba 6 meses, avanza 6 meses y reentrena (ventana creciente)
+  n_permutaciones: 2000
+  min_operaciones: 30              # menos operaciones fuera de muestra = veredicto INSUFICIENTE
+  expectativa_minima_r: 0.05       # expectativa mínima por operación (en R) para hablar de ventaja
+
+paper_trading:
+  carpeta_logs: logs/paper

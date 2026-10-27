@@ -5,7 +5,7 @@ Todos los servicios importan este módulo para no duplicar lógica de .env
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Optional
 
 # Al correr los servicios nativos en Windows (obligatorio con MT5/XM) nadie
 # inyecta las variables del .env, así que lo cargamos aquí. override=False:
@@ -153,3 +153,14 @@ class Settings:
 
 
 settings = Settings()
+
+# config.yaml: parámetros del modelo, backtest, validación y paper trading
+# (sin secretos; las claves siguen viniendo del .env vía Settings).
+CONFIG_YAML_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+
+
+def load_trading_config(path: Optional[Path] = None) -> Dict[str, Any]:
+    import yaml
+
+    with open(path or CONFIG_YAML_PATH, encoding="utf-8") as f:
+        return yaml.safe_load(f)
