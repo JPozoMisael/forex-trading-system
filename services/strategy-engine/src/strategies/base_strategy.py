@@ -13,6 +13,9 @@ class BaseStrategy(ABC):
     def __init__(self, name: str, params: Optional[dict] = None):
         self.name = name
         self.params = params or {}
+        # Lo que vio la estrategia en la última evaluación (p.ej. probabilidades del modelo).
+        # El strategy-engine lo publica en Redis para el reporte diario.
+        self.last_state: Optional[dict] = None
 
     @property
     @abstractmethod

@@ -5,6 +5,18 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-27 (avisos de fallo y reporte diario) · DESKTOP-RC7UDV1
+
+- **Avisos de fallo** (`services/monitoring/src/health_check.py`): además de BD, Redis y cuenta, avisa si no llegan velas nuevas (solo con el mercado abierto, dom 22:00 → vie 21:00 UTC) o si el strategy-engine no evalúa la última vela (latido en Redis `state:strategy:<PAR>`). Avisa por email y Telegram solo si el fallo dura 3 chequeos seguidos (un redeploy no genera alertas), y una vez al recuperarse.
+- **Reporte diario** (`daily_report.py`), de lunes a viernes a las `DAILY_REPORT_HOUR_UTC` (12 = 7:00 Ecuador):
+  - estado del sistema y probabilidades del modelo en la última vela;
+  - cuenta simulada, operaciones de 24 h y acumulado frente al backtest;
+  - gráfico con EMA 50/200, Fibonacci del último movimiento, sesiones de Londres y Nueva York, y posición abierta con SL/TP.
+  - Si el monitoring estuvo caído a esa hora, lo envía al volver.
+  - Prueba manual: `python services/monitoring/src/daily_report.py --enviar` (o `--guardar carpeta`).
+- Fibonacci, EMAs y sesiones son contexto visual: el modelo no los usa. 115 tests pasan.
+- **Idea anotada:** operar solo en las sesiones de Londres y Nueva York es una variante nueva del modelo. Hay que pre-registrarla y validarla con datos que no se hayan usado (paper trading o una prueba final nueva) antes de activarla.
+
 ## 2026-10-27 (paso 3: el modelo en Dokploy) · DESKTOP-RC7UDV1
 
 - El strategy-engine desplegado usa el modelo en lugar de `ma_crossover` y `mean_reversion` (sin ventaja). Se elige con `ACTIVE_STRATEGIES` (por defecto `ml`).

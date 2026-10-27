@@ -8,6 +8,8 @@ import signal
 import sys
 import threading
 import time
+from datetime import datetime, timezone
+from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
@@ -17,7 +19,8 @@ from shared.bus import EventBus
 
 from telegram_alerts import TelegramNotifier
 from email_alerts import EmailNotifier
-from health_check import HealthChecker
+from health_check import HealthChecker, failure_message
+from daily_report import send_daily_report, should_send
 
 log = get_logger(__name__)
 
@@ -30,33 +33,68 @@ def _handle_shutdown(signum, frame):
     running = False
 
 
-def _health_monitor_loop(checker: HealthChecker, notifier: TelegramNotifier):
-    """Hilo periódico para verificación de salud del sistema."""
+class AlertState:
+    """
+    Avisa solo cuando un fallo dura `confirm_checks` chequeos seguidos (un
+    redeploy o el reentreno del modelo no generan alertas) y una vez al
+    recuperarse.
+    """
+
+    def __init__(self, confirm_checks: int = 3):
+        self.confirm_checks = confirm_checks
+        self.bad_streak = 0
+        self.alerted = False
+
+    def update(self, status: str) -> Optional[str]:
+        """Devuelve "fallo", "recuperado" o None."""
+        if status == "UP":
+            self.bad_streak = 0
+            if self.alerted:
+                self.alerted = False
+                return "recuperado"
+            return None
+        self.bad_streak += 1
+        if self.bad_streak >= self.confirm_checks and not self.alerted:
+            self.alerted = True
+            return "fallo"
+        return None
+
+
+def _health_monitor_loop(checker: HealthChecker, notifier: TelegramNotifier, email_notifier: EmailNotifier, bus: EventBus):
+    """Hilo periódico: salud del sistema cada 60 s y reporte diario a su hora."""
     log.info("Iniciando monitor periódico de salud...")
-    last_status = "UP"
+    alerts = AlertState()
     while running:
         try:
             report = checker.run_full_check()
             log.info(
                 f"❤️ Estado del Sistema: {report['overall_status']} | PG: {report['postgres'].get('status')} | "
-                f"Redis: {report['redis'].get('status')} | Broker: {report['broker'].get('status')}"
+                f"Redis: {report['redis'].get('status')} | Broker: {report['broker'].get('status')} | "
+                f"Velas: {report['datos'].get('status')} | Modelo: {report['estrategia'].get('status')}"
             )
             if report["overall_status"] != "UP":
-                log.warning(f"⚠️ Alerta de Degradación de Infraestructura: {report}")
-            # Avisar solo en los cambios de estado para no inundar Telegram
-            if report["overall_status"] != last_status:
-                if report["overall_status"] == "UP":
-                    notifier.send_message("✅ *Sistema recuperado*: todos los componentes operativos.")
+                log.warning(f"⚠️ Componentes con fallo:\n{failure_message(report)}")
+            event = alerts.update(report["overall_status"])
+            if event and settings.enable_system_alerts:
+                failing = failure_message(report)
+                if event == "fallo":
+                    notifier.send_message(f"🚨 *Fallo en el sistema* (más de 3 min)\n{failing.replace('_', ' ')}")
                 else:
-                    notifier.send_message(
-                        f"🚨 *Sistema DEGRADADO*\n"
-                        f"PostgreSQL: `{report['postgres'].get('status')}`\n"
-                        f"Redis: `{report['redis'].get('status')}`\n"
-                        f"Broker: `{report['broker'].get('status')}` ({report['broker'].get('detail', '')})"
-                    )
-                last_status = report["overall_status"]
+                    notifier.send_message("✅ *Sistema recuperado*: todos los componentes operativos.")
+                email_notifier.send_system_alert(failing, recovered=(event == "recuperado"))
         except Exception as e:
             log.error(f"Error en health check: {e}")
+
+        try:
+            now = datetime.now(timezone.utc)
+            if settings.enable_daily_report and should_send(now, bus.get_json(settings.key_daily_report_sent),
+                                                            settings.daily_report_hour_utc):
+                # Se marca antes de enviar: si el envío falla no se reintenta cada minuto
+                bus.set_json(settings.key_daily_report_sent, now.date().isoformat())
+                log.info("📧 Enviando reporte diario...")
+                send_daily_report(email_notifier, notifier, bus, checker, now)
+        except Exception:
+            log.exception("Error generando el reporte diario")
 
         for _ in range(60):  # Chequeo cada 60 segundos
             if not running:
@@ -76,7 +114,9 @@ def main():
     checker = HealthChecker()
 
     # Iniciar hilo de salud
-    health_thread = threading.Thread(target=_health_monitor_loop, args=(checker, notifier), daemon=True)
+    # Conexión propia para el hilo: el bucle principal usa `bus` para leer los streams
+    health_thread = threading.Thread(target=_health_monitor_loop,
+                                     args=(checker, notifier, email_notifier, EventBus()), daemon=True)
     health_thread.start()
 
     channels = [

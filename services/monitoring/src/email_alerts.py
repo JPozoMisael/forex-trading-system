@@ -4,6 +4,8 @@ Espejo de telegram_alerts.py: mismos eventos, mismo criterio de qué informar,
 pero como email en texto plano para quien prefiera revisar su bandeja de entrada.
 """
 import smtplib
+from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional, Dict, Any
 
@@ -53,6 +55,49 @@ class EmailNotifier:
         except Exception as e:
             log.error(f"Error enviando correo '{subject}': {e}")
             return False
+
+    def send_html(self, subject: str, html: str, text: str, images: Optional[Dict[str, bytes]] = None) -> bool:
+        """Correo HTML con versión en texto plano e imágenes PNG incrustadas (en el HTML: src="cid:<nombre>")."""
+        if not self.is_configured:
+            log.info(f"\n[EMAIL SIMULADO] {subject}\n{text}\n" + "-" * 40)
+            return True
+
+        msg = MIMEMultipart("related")
+        msg["Subject"] = subject
+        msg["From"] = self.sender
+        msg["To"] = self.recipient
+        alt = MIMEMultipart("alternative")
+        alt.attach(MIMEText(text, "plain", "utf-8"))
+        alt.attach(MIMEText(html, "html", "utf-8"))
+        msg.attach(alt)
+        for name, data in (images or {}).items():
+            img = MIMEImage(data, "png")
+            img.add_header("Content-ID", f"<{name}>")
+            img.add_header("Content-Disposition", "inline", filename=f"{name}.png")
+            msg.attach(img)
+
+        try:
+            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=20) as server:
+                server.starttls()
+                server.login(self.sender, self.app_password)
+                server.sendmail(self.sender, [self.recipient], msg.as_string())
+            log.info(f"Correo '{subject}' enviado a {self.recipient}.")
+            return True
+        except Exception as e:
+            log.error(f"Error enviando correo '{subject}': {e}")
+            return False
+
+    def send_system_alert(self, failing: str, recovered: bool = False):
+        """Aviso de fallo o recuperación de componentes del sistema."""
+        if not settings.enable_system_alerts:
+            return
+        if recovered:
+            self.send_message("[Sistema recuperado] Todos los componentes funcionan",
+                              "El sistema volvió a funcionar con normalidad.")
+        else:
+            self.send_message("[ALERTA] Fallo en el sistema de trading",
+                              "Uno o más componentes fallan desde hace al menos 3 minutos:\n\n"
+                              f"{failing}\n\nRevisa los logs en Dokploy.")
 
     def send_signal_alert(self, sig: Dict[str, Any]):
         """Notificación cuando el Strategy Engine genera una señal."""

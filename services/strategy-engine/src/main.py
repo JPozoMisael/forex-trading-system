@@ -9,7 +9,7 @@ cruce de medias) no genera señales repetidas.
 import os
 import signal
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -138,16 +138,27 @@ def main():
                 continue
             last_evaluated[pair] = candle.timestamp
 
+            states = {}
             for strat in strategies:
                 if not strat.supports(pair, candle.granularity):
                     continue
                 try:
                     sig = strat.evaluate(df.iloc[-strat.lookback_window:], pair=pair)
+                    states[strat.name] = dict(strat.last_state or {}, senal=sig.direction.value if sig else None)
                     if sig:
                         log.info(f"🔥 Señal detectada por [{strat.name}] en {pair}: {sig.direction.value.upper()} SL={sig.stop_loss} TP={sig.take_profit}")
                         publisher.publish(sig)
                 except Exception:
+                    states[strat.name] = {"error": True}
                     log.exception(f"Error ejecutando estrategia {strat.name} en {pair}")
+
+            # Latido: el monitoring lo usa para saber que se evaluó la última vela y para el reporte diario
+            try:
+                bus.set_json(f"{settings.key_strategy_state_prefix}{pair}", {
+                    "vela": candle.timestamp, "evaluada": datetime.now(timezone.utc), "estrategias": states,
+                })
+            except Exception as e:
+                log.warning(f"No se pudo guardar el estado de {pair} en Redis: {e}")
     finally:
         publisher.close()
         bus.close()

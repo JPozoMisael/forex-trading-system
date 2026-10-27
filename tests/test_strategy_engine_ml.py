@@ -74,6 +74,15 @@ def test_ml_strategy_only_supports_its_pair_and_timeframe(candles):
     assert MACrossoverStrategy().supports("GBP_USD", "M5")
 
 
+def test_ml_strategy_records_what_it_saw(candles):
+    strat = MLStrategy.train(candles, CFG, "EUR_USD")
+    assert strat.last_state is None
+    strat.evaluate(candles.iloc[-1000:], "EUR_USD")
+    p = strat.probabilities(candles.iloc[-1000:])
+    assert strat.last_state == {"p_long": round(float(p["p_long"]), 4), "p_short": round(float(p["p_short"]), 4),
+                                "umbral": 0.5}
+
+
 def test_active_strategies_from_env_are_lowercase(monkeypatch):
     from shared.config import Settings
 

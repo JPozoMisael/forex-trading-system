@@ -114,7 +114,9 @@ class MLStrategy(BaseStrategy):
         p = self.probabilities(df)
         p_long, p_short = float(p["p_long"]), float(p["p_short"])
         if np.isnan(p_long) or np.isnan(p_short):
+            self.last_state = None
             return None
+        self.last_state = {"p_long": round(p_long, 4), "p_short": round(p_short, 4), "umbral": self.threshold}
 
         if p_long >= self.threshold and p_long >= p_short:
             direction, sign, prob = SignalDirection.BUY, 1, p_long

@@ -122,6 +122,12 @@ class Settings:
     enable_email_orders: bool = _get_bool("ENABLE_EMAIL_ORDERS", "true")
     enable_email_trades: bool = _get_bool("ENABLE_EMAIL_TRADES", "true")
 
+    # Avisos de fallo (sistema caído, sin velas nuevas...) y reporte diario (lunes a viernes)
+    enable_system_alerts: bool = _get_bool("ENABLE_SYSTEM_ALERTS", "true")
+    enable_daily_report: bool = _get_bool("ENABLE_DAILY_REPORT", "true")
+    # Hora UTC del reporte diario: 12 = 7:00 en Ecuador (UTC-5)
+    daily_report_hour_utc: int = int(os.getenv("DAILY_REPORT_HOUR_UTC", "12"))
+
     # Streams de Redis (persistentes: un servicio caído no pierde mensajes)
     channel_market_candle: str = "market:candle"          # Nueva vela cerrada (sufijo :PAR)
     channel_signals_new: str = "signals:new"              # Señal de estrategia
@@ -133,6 +139,9 @@ class Settings:
     # Claves de estado en Redis publicadas por el execution-engine
     key_account_snapshot: str = "state:account"
     key_symbol_spec_prefix: str = "state:symbol:"
+    # Última vela evaluada por el strategy-engine y lo que vio cada estrategia (sufijo PAR)
+    key_strategy_state_prefix: str = "state:strategy:"
+    key_daily_report_sent: str = "state:daily_report:last_sent"
 
     # General
     log_level: str = os.getenv("LOG_LEVEL", "INFO")

@@ -15,7 +15,7 @@
 | Estrategias `ma_crossover` (EMA 9/21 + EMA 200) y `mean_reversion` (Bollinger + RSI), inactivas por defecto | ✅ validadas: SIN VENTAJA | `services/strategy-engine/src/strategies/` |
 | Riesgo fail-closed: lotes con `tick_value`, circuit breaker sobre equity, límite de posiciones, spread, R:R mínimo | ✅ | `services/risk-manager/src/` |
 | Ejecución simulada (`SimulatedBroker`) y real MT5 (`MT5Broker`), idempotente y reconciliada | ✅ | `services/execution-engine/src/` |
-| Alertas Telegram / email, health check | ✅ | `services/monitoring/src/` |
+| Alertas Telegram / email, health check (BD, Redis, cuenta, velas que no llegan, modelo que no evalúa) y reporte diario con gráfico | ✅ | `services/monitoring/src/` |
 | Dashboard Grafana | ✅ básico | `infra/grafana/dashboards/trading_overview.json` |
 | Despliegue de los 5 servicios en un solo contenedor (Dokploy) | ✅ | `Dockerfile` raíz + `scripts/run_all.py` |
 | Backtester (MT5 / BD / CSV / sintético) con spread completo, slippage, comisión, entrada a la apertura siguiente y límite de pérdida diaria | ⚠️ sin validación estadística (P2) | `backtesting/src/` |

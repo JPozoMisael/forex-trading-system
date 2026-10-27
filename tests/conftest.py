@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(BASE_DIR, "services/strategy-engine/src"))
 sys.path.insert(0, os.path.join(BASE_DIR, "services/risk-manager/src"))
 sys.path.insert(0, os.path.join(BASE_DIR, "services/execution-engine/src"))
 sys.path.insert(0, os.path.join(BASE_DIR, "services/data-collector/src"))
+sys.path.insert(0, os.path.join(BASE_DIR, "services/monitoring/src"))
 sys.path.insert(0, os.path.join(BASE_DIR, "backtesting/src"))
 
 
