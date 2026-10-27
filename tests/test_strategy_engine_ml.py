@@ -74,6 +74,15 @@ def test_ml_strategy_only_supports_its_pair_and_timeframe(candles):
     assert MACrossoverStrategy().supports("GBP_USD", "M5")
 
 
+def test_active_strategies_from_env_are_lowercase(monkeypatch):
+    from shared.config import Settings
+
+    monkeypatch.setenv("ACTIVE_STRATEGIES", "ml, MA_Crossover")
+    assert Settings().active_strategies == ["ml", "ma_crossover"]
+    monkeypatch.delenv("ACTIVE_STRATEGIES")
+    assert Settings().active_strategies == ["ml"]
+
+
 def _load_strategy_engine_main():
     spec = importlib.util.spec_from_file_location(
         "strategy_engine_main", ROOT / "services" / "strategy-engine" / "src" / "main.py")

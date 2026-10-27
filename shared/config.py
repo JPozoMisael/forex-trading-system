@@ -48,7 +48,8 @@ class Settings:
     # Velas a descargar al arrancar para que las estrategias (EMA 200) tengan historia.
     collector_backfill_candles: int = int(os.getenv("COLLECTOR_BACKFILL_CANDLES", "1000"))
     # Estrategias del strategy-engine: ml (modelo de config.yaml), ma_crossover, mean_reversion.
-    active_strategies: List[str] = field(default_factory=lambda: _get_list("ACTIVE_STRATEGIES", "ml"))
+    # (_get_list pasa a mayúsculas, pensado para pares; los nombres de estrategia van en minúsculas)
+    active_strategies: List[str] = field(default_factory=lambda: [s.lower() for s in _get_list("ACTIVE_STRATEGIES", "ml")])
 
     # Base de datos (TimescaleDB / PostgreSQL)
     postgres_user: str = os.getenv("POSTGRES_USER", "forex")
