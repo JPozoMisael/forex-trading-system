@@ -12,7 +12,10 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
   - `python scripts/descargar_datos.py` descarga y revisa la calidad. EUR_USD H1: 37.416 velas (2020-10-27 → hoy) en 26 s. Los únicos huecos son Navidad y Año Nuevo.
   - `run_backtest.py` usa `--source dukascopy --granularity H1` por defecto.
 - **Línea base real:** `ma_crossover` en 6 años de EUR_USD H1 con spread 1.0 + slippage 0.3 + comisión $7/lote: **−66.9 %**, profit factor 0.82, 788 operaciones. No tiene ventaja.
-- Dokploy: los servicios caen porque `REDIS_HOST=redis` no existe (crear el servicio Redis en el proyecto y usar su *Internal Host* + `REDIS_PASSWORD`) y porque las credenciales de OANDA eran el texto de ejemplo. Aunque se arregle Redis, el data-collector no tendrá fuente hasta implementar `MARKET_DATA_PROVIDER=dukascopy` (P10). Mientras tanto, dejar la aplicación detenida.
+- **Dokploy arreglado salvo la fuente de datos:**
+  - Se creó el servicio Redis en el proyecto (`REDIS_HOST` = su *Internal Host*, más `REDIS_PASSWORD`). Las variables definitivas están en `.env.production.example`.
+  - `init_db.py` aplicó el esquema v2 en `tradingsystem-postgres-jgl1jl/trading` (PostgreSQL 15.19, sin TimescaleDB): 8 tablas y 7 vistas.
+  - strategy-engine, risk-manager, monitoring y execution-engine arrancan bien. El data-collector falla con `MARKET_DATA_PROVIDER='dukascopy' no soportado` hasta implementar P10.
 - **Siguiente paso:** fase 4 (`validation.py`, walk-forward + permutación + bootstrap) y fase 5 (`MLStrategy`).
 
 ## 2026-10-27 · DESKTOP-RC7UDV1
