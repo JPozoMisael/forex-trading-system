@@ -5,6 +5,22 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-28 (gráficos estilo TradingView) · DESKTOP-RC7UDV1
+
+- La primera operación (VENTA EUR/USD 1.11265) cerró en el Stop Loss: −$99.45 = −1 R, lo previsto.
+- **Correo de operación cerrada con gráfico** (`services/monitoring/src/trade_report.py`):
+  - velas de antes, durante y después de la operación (M5/M15/H1/H4 según la duración, bajadas de Dukascopy);
+  - herramienta "Posición larga/corta" con zonas de SL y TP, pips y dinero;
+  - entrada, salida, rango de precios y duración;
+  - explicación en palabras, en hora local.
+  - Si falla la BD, la descarga o el gráfico, se envía igual: sin imagen, o el aviso en texto de antes.
+- **Reporte con varias temporalidades** (`charts.py`):
+  - cuadrícula Diario / 4 h / 30 min / 15 min por instrumento, con EMAs, Fibonacci y etiqueta del precio;
+  - tabla de tendencia, vela típica (ATR), rango y precio frente a Fibonacci;
+  - la posición abierta se dibuja con la herramienta de posición; imágenes a 170 dpi.
+  - Es solo contexto: el modelo sigue decidiendo con H1.
+- El monitoring necesita `dukascopy-python` (añadido a sus requirements). 135 tests pasan.
+
 ## 2026-10-28 (oro, más pares y reportes en hora de Ecuador) · DESKTOP-RC7UDV1
 
 - **Primera operación del modelo en Dokploy:** VENTA de EUR/USD a 1.11265, abierta a las 5:00 a. m. de Ecuador (10:00 UTC), en simulación.

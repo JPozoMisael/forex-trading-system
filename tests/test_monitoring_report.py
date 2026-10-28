@@ -257,3 +257,101 @@ def test_reference_of_each_instrument_comes_from_config():
     assert {"EUR_USD", "USD_JPY", "XAU_USD"} <= set(refs)
     assert "comprar y mantener: +103.4 %" in _ref_text("XAU_USD", refs)
     assert _ref_text("GBP_USD", refs) == ""
+
+
+# ------------------------------------------------------------- gráficos de temporalidades y de operación
+
+def _fake_fetch(candles):
+    def fetch(pair, gran, start, end):
+        return candles[(candles.index >= start) & (candles.index < end)]
+    return fetch
+
+
+def test_report_includes_every_timeframe():
+    from charts import plot_timeframes
+    from daily_report import collect_timeframes, report_images
+
+    data = _report_data(with_trades=True)
+    fetch = _fake_fetch(data.candles)  # las mismas velas sirven para probar todas las temporalidades
+    data.timeframes = collect_timeframes("EUR_USD", data.now, skip="H1", fetch=fetch)
+    assert set(data.timeframes) == {"D", "H4", "M30", "M15"}
+    subject, html, text = build_report(data)
+    assert "cid:tf_EUR_USD" in html and "Todas las temporalidades" in html
+    assert "1 hora (la del modelo): tendencia" in text and "pips" in text
+    images = report_images([data])
+    assert set(images) == {"grafico_EUR_USD", "tf_EUR_USD"}
+    assert plot_timeframes("EUR_USD", data.timeframes)[:4] == b"\x89PNG"
+
+
+def test_report_still_sent_when_timeframes_fail():
+    from daily_report import collect_timeframes
+
+    def broken(*a, **k):
+        raise ConnectionError("sin internet")
+
+    data = _report_data(with_trades=False)
+    data.timeframes = collect_timeframes("EUR_USD", data.now, skip="H1", fetch=broken)
+    assert data.timeframes == {}
+    _, html, _ = build_report(data)
+    assert "cid:tf_EUR_USD" not in html
+
+
+def test_gold_moves_are_in_dollars_and_forex_in_pips():
+    from charts import duration_text, move_text
+
+    assert move_text("EUR_USD", 0.00153) == "15.3 pips"
+    assert move_text("USD_JPY", -0.25, signed=True) == "−25.0 pips"
+    assert move_text("XAU_USD", 12.5) == "12.50 USD/oz"
+    assert duration_text(359.3) == "5 h 59 min" and duration_text(45) == "45 min" and duration_text(3000) == "2 d 2 h"
+
+
+def _closed_trade(candles):
+    entry_t, exit_t = candles.index[-20], candles.index[-8]
+    entry = float(candles["close"].loc[entry_t])
+    return {"order_id": 7, "pair": "EUR_USD", "direction": "sell", "units": 65000, "entry_price": entry,
+            "exit_price": entry + 0.00153, "pnl": -99.45, "pips": -15.3, "roi_pct": -100.0,
+            "opened_at": entry_t.isoformat(), "closed_at": exit_t.isoformat(), "duration_minutes": 720.0,
+            "strategy_name": "ML_LightGBM", "exit_reason": "sl"}, \
+        {"stop_loss": entry + 0.00153, "take_profit": entry - 0.0023, "risk_amount": 99.45, "volume_lots": 0.65}
+
+
+class _FakeEmail:
+    def __init__(self):
+        self.html, self.text_alerts = [], []
+
+    def send_html(self, subject, html, text, images=None):
+        self.html.append((subject, html, text, images or {}))
+        return True
+
+    def send_trade_closed_alert(self, trade):
+        self.text_alerts.append(trade)
+
+
+def test_closed_trade_email_has_chart_and_explains_the_result():
+    from trade_report import send_trade_report
+
+    candles = _report_data(False).candles
+    trade, order = _closed_trade(candles)
+    email = _FakeEmail()
+    now = candles.index[-1].to_pydatetime() + timedelta(hours=1)
+    assert send_trade_report(email, trade, now=now, load=lambda _id: order, fetch=_fake_fetch(candles))
+    subject, html, text, images = email.html[0]
+    assert "EUR/USD VENTA" in subject and "Stop Loss" in subject and "−$99.45" in subject
+    assert "esperando que el precio bajara" in text and "15.3 pips" in text and "1 : 1.50" in text
+    assert "-1.00 R" in text and "UTC" not in text
+    assert images["operacion"][:4] == b"\x89PNG" and "cid:operacion" in html
+
+
+def test_closed_trade_email_without_chart_or_db_still_goes_out():
+    from trade_report import send_trade_report
+
+    candles = _report_data(False).candles
+    trade, _ = _closed_trade(candles)
+    email = _FakeEmail()
+
+    def broken(*a, **k):
+        raise ConnectionError("sin internet")
+
+    assert send_trade_report(email, trade, load=lambda _id: None, fetch=broken)
+    subject, html, text, images = email.html[0]
+    assert images == {} and "cid:operacion" not in html and "−$99.45" in subject

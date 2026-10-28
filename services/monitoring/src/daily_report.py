@@ -30,6 +30,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from charts import (DOWN, DPI, EMA_COLORS, GRID, SURFACE, TEXT_PRIMARY, TEXT_SECONDARY, TIMEFRAMES, UP,
+                    bar_index as _bar_index, digits as _digits, display_name, draw_fibonacci, draw_position, fetch_recent,
+                    fibonacci_levels, move_text, plot_timeframes, price_tag, timeframe_summary)
+
 from shared.config import GRANULARITY_MINUTES, settings
 from shared.logger import get_logger
 from shared.timefmt import fmt_fecha, fmt_hora, fmt_local, local_tz, to_local, zona
@@ -38,7 +42,6 @@ log = get_logger(__name__)
 
 # Horario aproximado de cada sesión en UTC (sin ajuste de horario de verano)
 SESSIONS = {"Londres": (7, 16), "Nueva York": (12, 21)}
-FIB_RATIOS = (0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0)
 CHART_BARS = 120  # 5 días de H1
 
 # Referencia de la prueba final (2023-10 a 2026-10, 76 operaciones en 36 meses)
@@ -50,17 +53,6 @@ def backtest_refs() -> Dict[str, Dict[str, float]]:
         return (load_trading_config().get("produccion") or {}).get("referencia_backtest") or {}
     except Exception:
         return {}
-
-# Colores (skill dataviz, modo claro). Alcista/bajista = slots validados verde y naranja.
-SURFACE = "#fcfcfb"
-TEXT_PRIMARY = "#0b0b0b"
-TEXT_SECONDARY = "#52514e"
-GRID = "#e4e3df"
-REFERENCE = "#8a8984"
-UP = "#1baf7a"
-DOWN = "#eb6834"
-EMA_COLORS = {50: "#2a78d6", 200: TEXT_SECONDARY}
-
 
 @dataclass
 class ReportData:
@@ -74,6 +66,7 @@ class ReportData:
     open_orders: pd.DataFrame = field(default_factory=pd.DataFrame)
     closed_orders: pd.DataFrame = field(default_factory=pd.DataFrame)  # todas, por closed_at
     initial_balance: float = 10000.0
+    timeframes: Dict[str, pd.DataFrame] = field(default_factory=dict)  # otras temporalidades (contexto)
 
 
 # ---------------------------------------------------------------- cálculos
@@ -111,21 +104,6 @@ def upcoming_sessions(now: datetime) -> List[str]:
     return [name for name, (a, _) in SESSIONS.items() if abs(a * 60 - (now.hour * 60 + now.minute)) <= 120]
 
 
-def fibonacci_levels(df: pd.DataFrame) -> Dict[str, Any]:
-    """
-    Retrocesos del último gran movimiento de la ventana: del mínimo al máximo
-    (si el máximo es posterior, tendencia alcista) o al revés. 0 % es el
-    extremo más reciente.
-    """
-    hi_t, lo_t = df["high"].idxmax(), df["low"].idxmin()
-    hi, lo = float(df["high"].max()), float(df["low"].min())
-    up = hi_t > lo_t
-    rng = hi - lo
-    levels = [(r, hi - r * rng) if up else (r, lo + r * rng) for r in FIB_RATIOS]
-    return {"tendencia": "alcista" if up else "bajista", "alto": hi, "bajo": lo,
-            "alto_t": hi_t, "bajo_t": lo_t, "niveles": levels}
-
-
 def active_sessions(now: datetime) -> List[str]:
     return [name for name, (a, b) in SESSIONS.items() if a <= now.hour < b]
 
@@ -153,15 +131,6 @@ def trade_stats(closed: pd.DataFrame, initial_balance: float) -> Dict[str, Any]:
 
 # ---------------------------------------------------------------- gráfico
 
-def _bar_index(index: pd.DatetimeIndex, ts) -> Optional[int]:
-    ts = pd.Timestamp(ts)
-    if ts.tzinfo is None:
-        ts = ts.tz_localize("UTC")
-    if ts < index[0] or ts > index[-1] + (index[-1] - index[-2]):
-        return None
-    return int(min(index.searchsorted(ts, side="right") - 1, len(index) - 1))
-
-
 def plot_chart(data: ReportData) -> bytes:
     full = data.candles
     emas = {p: full["close"].ewm(span=p, adjust=False).mean() for p in EMA_COLORS}
@@ -170,7 +139,7 @@ def plot_chart(data: ReportData) -> bytes:
     fib = fibonacci_levels(df)
     dg = _digits(data.pair)
 
-    fig, (ax, ax_s) = plt.subplots(2, 1, figsize=(11, 6.2), dpi=130, sharex=True,
+    fig, (ax, ax_s) = plt.subplots(2, 1, figsize=(11, 6.2), dpi=DPI, sharex=True,
                                    gridspec_kw={"height_ratios": [12, 1.4], "hspace": 0.05})
     fig.patch.set_facecolor(SURFACE)
     for a in (ax, ax_s):
@@ -189,22 +158,18 @@ def plot_chart(data: ReportData) -> bytes:
         ax.plot(list(x), emas[p].iloc[-CHART_BARS:].to_numpy(), color=color, linewidth=1.6,
                 label=f"EMA {p}", zorder=4)
 
-    # Fibonacci
-    for ratio, price in fib["niveles"]:
-        ax.axhline(price, color=REFERENCE, linewidth=0.8, linestyle=(0, (2, 3)), zorder=1)
-        ax.annotate(f"Fib {ratio * 100:.1f}%  {price:.{dg}f}", xy=(1.0, price), xycoords=("axes fraction", "data"),
-                    xytext=(6, 0), textcoords="offset points", va="center", fontsize=7.5, color=TEXT_SECONDARY)
+    draw_fibonacci(ax, df, data.pair)
 
-    # Posición abierta: entrada, SL y TP
+    # Posición abierta: herramienta "Posición larga/corta" desde la vela de entrada hasta ahora
     for _, o in data.open_orders.iterrows():
-        for price, color, label, style in ((o.get("entry_price"), TEXT_PRIMARY, "Entrada", (0, (5, 3))),
-                                           (o.get("stop_loss"), DOWN, "SL", "-"),
-                                           (o.get("take_profit"), UP, "TP", "-")):
-            if price is None or pd.isna(price):
-                continue
-            ax.axhline(price, color=color, linewidth=1.4, linestyle=style, zorder=5)
-            ax.annotate(f"{label} {float(price):.{dg}f}", xy=(0.0, float(price)), xycoords=("axes fraction", "data"),
-                        xytext=(4, 3), textcoords="offset points", fontsize=8, color=TEXT_PRIMARY, zorder=6)
+        entry = o.get("entry_price")
+        if entry is None or pd.isna(entry):
+            continue
+        i_in = _bar_index(df.index, o.get("opened_at")) if o.get("opened_at") is not None else None
+        sl, tp = (float(o[k]) if o.get(k) is not None and not pd.isna(o.get(k)) else None
+                  for k in ("stop_loss", "take_profit"))
+        draw_position(ax, (i_in if i_in is not None else len(df) - 6) - 0.5, len(df) - 0.5, data.pair,
+                      str(o["direction"]).lower() == "buy", float(entry), sl, tp, _money_per_unit(o, data.pair, entry))
 
     # Operaciones cerradas dentro de la ventana
     for _, t in data.closed_orders.iterrows():
@@ -257,6 +222,7 @@ def plot_chart(data: ReportData) -> bytes:
         a.tick_params(colors=TEXT_SECONDARY, labelsize=8)
     ax_s.tick_params(axis="y", length=0)
 
+    price_tag(ax, df, data.pair)
     close = float(df["close"].iloc[-1])
     ax.set_title(f"{display_name(data.pair)} {data.granularity} · últimos {len(df)} periodos · cierre {close:.{dg}f} · "
                  f"Fibonacci del movimiento {fib['tendencia']}", loc="left", fontsize=11, color=TEXT_PRIMARY, pad=10)
@@ -275,6 +241,17 @@ def plot_chart(data: ReportData) -> bytes:
 
 
 # ---------------------------------------------------------------- texto
+
+def _money_per_unit(o, pair: str, price) -> Optional[float]:
+    """USD por cada unidad de precio que se mueve la posición (para mostrar dinero en el gráfico)."""
+    from shared.fx import quote_to_usd_rate
+
+    units = o.get("units")
+    rate = quote_to_usd_rate(pair, float(price))
+    if units is None or pd.isna(units) or rate is None:
+        return None
+    return float(units) * rate
+
 
 def _fmt_money(v: float) -> str:
     return f"{'+' if v >= 0 else '-'}${abs(v):,.2f}"
@@ -341,18 +318,6 @@ def _position_text(o, pair: str, price: float, digits: int) -> str:
             f"Ahora va {_fmt_money(now_pnl)}. No tienes que hacer nada: el sistema la cierra solo.")
 
 
-def display_name(pair: str) -> str:
-    """'EUR/USD', 'Oro (XAU/USD)'."""
-    p = pair.upper().replace("_", "/")
-    return f"Oro ({p})" if p.startswith("XAU") else p
-
-
-def _digits(pair: str) -> int:
-    """Decimales con que se cotiza: oro 2, yen 3, resto 5."""
-    p = pair.upper()
-    return 2 if p.startswith("XAU") else 3 if "JPY" in p else 5
-
-
 def _instrument_section(data: ReportData, refs: Optional[Dict] = None) -> Dict[str, Any]:
     """Lo de un instrumento: qué ve el modelo, posiciones y operaciones de 24 h."""
     d = _digits(data.pair)
@@ -383,8 +348,28 @@ def _instrument_section(data: ReportData, refs: Optional[Dict] = None) -> Dict[s
         model_detail += " Como ya hay una posición abierta en este instrumento, no se abre otra."
     ref = _ref_text(data.pair, refs if refs is not None else backtest_refs())
     return {"pair": data.pair, "name": display_name(data.pair), "short": model_short, "detail": model_detail, "ref": ref,
-            "close": px(price),
+            "close": px(price), "tf_rows": timeframe_rows(data), "has_tf_chart": bool(data.timeframes),
             "open_rows": open_rows, "open_texts": open_texts, "closed_rows": closed_rows}
+
+
+def timeframe_rows(data: ReportData) -> List[List[str]]:
+    """Una fila por temporalidad: tendencia, vela típica, rango y el Fibonacci más cercano al precio."""
+    d = _digits(data.pair)
+    frames = {data.granularity.upper(): data.candles, **data.timeframes}
+    order = ["D", "H4", data.granularity.upper(), "M30", "M15"]
+    names = {**{g: n for g, (n, _) in TIMEFRAMES.items()}, "H1": "1 hora"}
+    rows = []
+    for gran in dict.fromkeys(order):
+        df = frames.get(gran)
+        if df is None or len(df) < 30:
+            continue
+        bars = TIMEFRAMES.get(gran, (None, CHART_BARS))[1]
+        s = timeframe_summary(df, data.pair, bars)
+        where = "justo en" if abs(s["fib_dist"]) < s["atr"] * 0.1 else             f"{move_text(data.pair, s['fib_dist'])} {'encima' if s['fib_dist'] > 0 else 'debajo'} de"
+        label = names.get(gran, gran) + (" (la del modelo)" if gran == data.granularity.upper() else "")
+        rows.append([label, s["tendencia"], move_text(data.pair, s["atr"]), move_text(data.pair, s["rango"]),
+                     f"{where} Fib {s['fib_ratio'] * 100:.1f} % ({s['fib_precio']:.{d}f})"])
+    return rows
 
 
 def build_report(datas) -> Tuple[str, str, str]:
@@ -440,6 +425,7 @@ def build_report(datas) -> Tuple[str, str, str]:
     lines += ["", sessions_now]
     for s in sections:
         lines += ["", f"== {s['name']} · precio {s['close']} ==", f"MODELO: {s['detail']}"] + ([f"  {s['ref']}"] if s["ref"] else [])
+        lines += [f"  {r[0]}: tendencia {r[1]}, vela típica {r[2]}, rango {r[3]}, precio {r[4]}" for r in s["tf_rows"]]
         lines += [f"  POSICIÓN: {t}" for t in s["open_texts"]] or ["  Sin posiciones abiertas."]
         lines += [f"  Cerrada (24 h): {' | '.join(r)}" for r in s["closed_rows"]]
     lines += ["", f"CUENTA SIMULADA: {account_line}", "", "ACUMULADO (todos los instrumentos):"]
@@ -465,13 +451,22 @@ def build_report(datas) -> Tuple[str, str, str]:
         closed_html = (f"<p {p}><b>Cerradas en las últimas 24 h</b></p>"
                        + table(["Dirección", "Entrada", "Salida", "Cerrada", "Motivo", "Resultado", "R"], s["closed_rows"])
                        if s["closed_rows"] else "")
+        tf_html = ""
+        if s["tf_rows"]:
+            tf_html = (f"<p {p}><b>Todas las temporalidades</b> (vela típica = cuánto se mueve una vela en promedio; "
+                       f"rango = del mínimo al máximo de lo que muestra cada gráfico)</p>"
+                       + table(["Temporalidad", "Tendencia", "Vela típica", "Rango", "Precio frente a Fibonacci"],
+                               s["tf_rows"])
+                       + (f"<img src=\"cid:tf_{s['pair']}\" alt=\"{s['name']} en varias temporalidades\" "
+                          f"style=\"width:100%;max-width:900px;margin-top:8px\">" if s["has_tf_chart"] else ""))
         parts.append(f"""
 <h2 {h2}>{s['name']} · precio {s['close']}</h2>
 <p {p}>{s['detail']}</p>
 {f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:0 0 8px'>{s['ref']}</p>" if s['ref'] else ""}
 <img src="cid:grafico_{s['pair']}" alt="Gráfico de {s['name']}" style="width:100%;max-width:900px">
 {open_html}
-{closed_html}""")
+{closed_html}
+{tf_html}""")
 
     html = f"""<html><body style="font-family:Arial,Helvetica,sans-serif;color:{TEXT_PRIMARY};background:{SURFACE};max-width:900px">
 <h1 style="font-size:19px;margin:0 0 4px">{title} · {', '.join(display_name(d.pair) for d in datas)} · velas de {first.granularity}</h1>
@@ -510,6 +505,35 @@ def _load_pair(conn, pair: str, gran: str):
     return candles, open_orders, closed
 
 
+def collect_timeframes(pair: str, now: datetime, skip: str = "", fetch=None) -> Dict[str, pd.DataFrame]:
+    """Velas de las otras temporalidades (Dukascopy). Si una falla se omite: el reporte sale igual."""
+    frames = {}
+    for gran, (_, bars) in TIMEFRAMES.items():
+        if gran == skip.upper():
+            continue
+        try:
+            df = fetch_recent(pair, gran, bars, now, fetch=fetch)
+        except Exception as e:
+            log.warning(f"Reporte: no se pudieron bajar velas {gran} de {pair}: {e}")
+            continue
+        if len(df) >= 30:
+            frames[gran] = df
+    return frames
+
+
+def report_images(datas: List[ReportData]) -> Dict[str, bytes]:
+    """Gráfico principal y cuadrícula de temporalidades de cada instrumento (la cuadrícula es opcional)."""
+    images = {}
+    for d in datas:
+        images[f"grafico_{d.pair}"] = plot_chart(d)
+        if d.timeframes:
+            try:
+                images[f"tf_{d.pair}"] = plot_timeframes(d.pair, d.timeframes)
+            except Exception:
+                log.exception(f"No se pudo dibujar las temporalidades de {d.pair}")
+    return images
+
+
 def collect(bus, checker, now: Optional[datetime] = None) -> List[ReportData]:
     """Un ReportData por cada par de FOREX_PAIRS que tenga velas en la BD."""
     import psycopg2
@@ -530,6 +554,7 @@ def collect(bus, checker, now: Optional[datetime] = None) -> List[ReportData]:
                 pair=pair, granularity=gran, now=now, candles=candles, health=health,
                 strategy_state=bus.get_json(f"{settings.key_strategy_state_prefix}{pair}"), account=account,
                 open_orders=open_orders, closed_orders=closed, initial_balance=settings.sim_initial_balance,
+                timeframes=collect_timeframes(pair, now, skip=gran),
             ))
     finally:
         conn.close()
@@ -541,7 +566,7 @@ def collect(bus, checker, now: Optional[datetime] = None) -> List[ReportData]:
 def send_daily_report(email, telegram, bus, checker, now: Optional[datetime] = None) -> bool:
     datas = collect(bus, checker, now)
     subject, html, text = build_report(datas)
-    images = {f"grafico_{d.pair}": plot_chart(d) for d in datas}
+    images = report_images(datas)
     sent = email.send_html(subject, html, text, images=images)
     telegram.send_message(text.replace("_", "/"))  # "_" rompe el Markdown de Telegram
     return sent
@@ -565,9 +590,9 @@ def main():
             subject, html, _ = build_report(datas)
             out = Path(args.guardar)
             out.mkdir(parents=True, exist_ok=True)
-            for d in datas:
-                (out / f"grafico_{d.pair}.png").write_bytes(plot_chart(d))
-                html = html.replace(f"cid:grafico_{d.pair}", f"grafico_{d.pair}.png")
+            for name, png in report_images(datas).items():
+                (out / f"{name}.png").write_bytes(png)
+                html = html.replace(f"cid:{name}", f"{name}.png")
             (out / "reporte.html").write_text(html, encoding="utf-8")
             print(f"[v] {subject}\n    -> {out / 'reporte.html'}")
         elif args.enviar:

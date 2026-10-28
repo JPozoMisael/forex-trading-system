@@ -21,6 +21,7 @@ from telegram_alerts import TelegramNotifier
 from email_alerts import EmailNotifier
 from health_check import HealthChecker, failure_message
 from daily_report import due_slot, send_daily_report
+from trade_report import send_trade_report
 
 log = get_logger(__name__)
 
@@ -197,7 +198,10 @@ def main():
             # y viceversa.
             for label, target in (("Telegram", notifier), ("Email", email_notifier)):
                 try:
-                    getattr(target, method)(data)
+                    if label == "Email" and channel == settings.channel_orders_closed:
+                        send_trade_report(email_notifier, data)  # con gráfico de la operación
+                    else:
+                        getattr(target, method)(data)
                 except Exception as ev_err:
                     log.error(f"Error despachando alerta {label} para canal '{channel}': {ev_err}")
 
