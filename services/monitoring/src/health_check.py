@@ -65,6 +65,18 @@ def strategy_status(state: Optional[Dict[str, Any]], last_candle: Optional[datet
     return {"status": "healthy", "detail": f"última vela evaluada {evaluated:%Y-%m-%d %H:%M} UTC"}
 
 
+def combine_status(per_pair: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """Un estado para varios pares: falla si falla alguno (y dice cuál)."""
+    bad = {p: s for p, s in per_pair.items() if s["status"] == "unhealthy"}
+    if bad:
+        return {"status": "unhealthy", "detail": "; ".join(f"{p}: {s['detail']}" for p, s in bad.items())}
+    if per_pair and all(s["status"] == "n/a" for s in per_pair.values()):
+        return {"status": "n/a", "detail": next(iter(per_pair.values()))["detail"]}
+    ok = [p for p, s in per_pair.items() if s["status"] == "healthy"]
+    detail = next((s["detail"] for s in per_pair.values() if s["status"] == "healthy"), "")
+    return {"status": "healthy", "detail": f"{detail} ({len(ok)} par(es))" if len(per_pair) > 1 else detail}
+
+
 def overall_status(report: Dict[str, Any]) -> str:
     return "DEGRADED" if any(report[c].get("status") == "unhealthy" for c in COMPONENTS if c in report) else "UP"
 
@@ -136,19 +148,23 @@ class HealthChecker:
             conn.close()
 
     def check_pipeline(self, now: Optional[datetime] = None) -> Dict[str, Dict[str, Any]]:
-        """Velas nuevas y evaluación del modelo, para el primer par (el del modelo)."""
+        """Velas nuevas y evaluación del modelo en cada par de FOREX_PAIRS."""
         now = now or datetime.now(timezone.utc)
-        pair, gran = settings.forex_pairs[0], settings.granularity_minutes
-        try:
-            last = self.last_candle(pair)
-        except Exception as e:
-            err = {"status": "n/a", "detail": f"BD no disponible: {e}"}
-            return {"datos": err, "estrategia": err}
-        try:
-            state = self.bus.get_json(f"{settings.key_strategy_state_prefix}{pair}")
-        except Exception:
-            state = None
-        return {"datos": candle_status(last, now, gran), "estrategia": strategy_status(state, last, now, gran)}
+        gran = settings.granularity_minutes
+        per_pair = {}
+        for pair in settings.forex_pairs:
+            try:
+                last = self.last_candle(pair)
+            except Exception as e:
+                err = {"status": "n/a", "detail": f"BD no disponible: {e}"}
+                return {"datos": err, "estrategia": err}
+            try:
+                state = self.bus.get_json(f"{settings.key_strategy_state_prefix}{pair}")
+            except Exception:
+                state = None
+            per_pair[pair] = (candle_status(last, now, gran), strategy_status(state, last, now, gran))
+        return {"datos": combine_status({p: s[0] for p, s in per_pair.items()}),
+                "estrategia": combine_status({p: s[1] for p, s in per_pair.items()})}
 
     def run_full_check(self) -> Dict[str, Any]:
         report = {"postgres": self.check_postgres(), "redis": self.check_redis(), "broker": self.check_broker()}

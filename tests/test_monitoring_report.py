@@ -175,7 +175,7 @@ def _report_data(with_trades: bool) -> ReportData:
 def test_report_and_chart_are_built(with_trades):
     data = _report_data(with_trades)
     subject, html, text = build_report(data)
-    assert "sistema OK" in subject and "cid:grafico" in html
+    assert "sistema OK" in subject and "cid:grafico_EUR_USD" in html
     assert "P(compra gana) 41.0 %" in text
     if with_trades:
         assert "1 posición(es) abierta(s)" in subject and "+$120.00" in text
@@ -183,3 +183,28 @@ def test_report_and_chart_are_built(with_trades):
         assert "ninguna todavía" in text
     png = plot_chart(data)
     assert png[:8] == b"\x89PNG\r\n\x1a\n" and len(png) > 20_000
+
+
+def test_combined_status_names_the_failing_pair():
+    from health_check import combine_status
+
+    ok = {"status": "healthy", "detail": "última vela 14:00"}
+    st = combine_status({"EUR_USD": ok, "XAU_USD": {"status": "unhealthy", "detail": "sin velas nuevas"}})
+    assert st["status"] == "unhealthy" and "XAU_USD" in st["detail"] and "EUR_USD" not in st["detail"]
+    assert combine_status({"EUR_USD": ok, "GBP_USD": ok})["status"] == "healthy"
+    assert combine_status({"EUR_USD": {"status": "n/a", "detail": "mercado cerrado"}})["status"] == "n/a"
+
+
+def test_report_with_several_instruments():
+    eur = _report_data(with_trades=True)
+    gold_candles = eur.candles * 3600  # precios del orden del oro
+    gold = ReportData(pair="XAU_USD", granularity="H1", now=eur.now, candles=gold_candles, health=eur.health,
+                      strategy_state={"vela": gold_candles.index[-1].isoformat(),
+                                      "estrategias": {"ML_LightGBM": {"p_long": 0.55, "p_short": 0.2,
+                                                                      "umbral": 0.5, "senal": "buy"}}},
+                      account=eur.account, initial_balance=10000)
+    subject, html, text = build_report([eur, gold])
+    assert "XAU_USD SEÑAL BUY" in subject and "1 posición(es)" in subject
+    assert "cid:grafico_EUR_USD" in html and "cid:grafico_XAU_USD" in html
+    assert f"precio {gold_candles['close'].iloc[-1]:.2f}" in text  # oro con 2 decimales
+    assert plot_chart(gold)[:4] == b"\x89PNG"

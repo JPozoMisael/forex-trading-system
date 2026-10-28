@@ -19,7 +19,7 @@ sys.path.insert(0, ROOT)
 import pandas as pd
 import psycopg2
 
-from shared.config import load_trading_config, settings
+from shared.config import instrument_config, load_trading_config, settings
 from shared.logger import get_logger
 from shared.bus import EventBus
 from shared.models import Candle
@@ -77,6 +77,28 @@ def load_recent_candles(pair: str, granularity: str, limit: int = 300) -> Option
         return None
 
 
+def build_ml_strategies(cfg: dict, models_dir: Path) -> List[BaseStrategy]:
+    """
+    Un modelo por instrumento de `produccion.activos` (config.yaml) que el
+    sistema reciba (FOREX_PAIRS), cada uno con sus costes. Solo esos operan.
+    """
+    from ml.serving import load_or_train
+
+    gran = cfg["mercado"]["temporalidad"]
+    if gran.upper() != settings.candle_granularity:
+        log.error(f"Los modelos son de {gran} (config.yaml) pero el sistema recibe velas {settings.candle_granularity}: "
+                  f"no generarán señales. Ajusta CANDLE_GRANULARITY.")
+    activos = (cfg.get("produccion") or {}).get("activos") or [cfg["mercado"]["par"]]
+    missing = [p for p in activos if p not in settings.forex_pairs]
+    if missing:
+        log.error(f"Instrumentos activos sin datos (faltan en FOREX_PAIRS): {missing}. Añádelos para que operen.")
+    ignored = [p for p in settings.forex_pairs if p not in activos]
+    if ignored:
+        log.warning(f"Pares en FOREX_PAIRS sin modelo validado (solo se recogen velas, no operan): {ignored}")
+    return [load_or_train(instrument_config(cfg, pair), models_dir, log=log.info)
+            for pair in activos if pair in settings.forex_pairs]
+
+
 def build_strategies(names: List[str], models_dir: Path = MODELS_DIR) -> List[BaseStrategy]:
     """Estrategias activas según ACTIVE_STRATEGIES. Un nombre desconocido es un error."""
     strategies: List[BaseStrategy] = []
@@ -86,15 +108,7 @@ def build_strategies(names: List[str], models_dir: Path = MODELS_DIR) -> List[Ba
         elif name == "mean_reversion":
             strategies.append(MeanReversionStrategy(bb_period=20, bb_std=2.0, rsi_period=14, rsi_oversold=30.0, rsi_overbought=70.0))
         elif name == "ml":
-            from ml.serving import load_or_train
-
-            cfg = load_trading_config()
-            strat = load_or_train(cfg, models_dir, log=log.info)
-            pair, gran = cfg["mercado"]["par"], cfg["mercado"]["temporalidad"]
-            if pair not in settings.forex_pairs or gran.upper() != settings.candle_granularity:
-                log.error(f"El modelo es de {pair} {gran} (config.yaml) pero el sistema recibe {settings.forex_pairs} "
-                          f"{settings.candle_granularity}: no generará señales. Ajusta FOREX_PAIRS y CANDLE_GRANULARITY.")
-            strategies.append(strat)
+            strategies.extend(build_ml_strategies(load_trading_config(), models_dir))
         else:
             raise ValueError(f"Estrategia desconocida '{name}' en ACTIVE_STRATEGIES. Opciones: ml, ma_crossover, mean_reversion")
     if not strategies:

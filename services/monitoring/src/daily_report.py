@@ -152,6 +152,7 @@ def plot_chart(data: ReportData) -> bytes:
     df = full.iloc[-CHART_BARS:]
     x = range(len(df))
     fib = fibonacci_levels(df)
+    dg = _digits(data.pair)
 
     fig, (ax, ax_s) = plt.subplots(2, 1, figsize=(11, 6.2), dpi=130, sharex=True,
                                    gridspec_kw={"height_ratios": [12, 1.4], "hspace": 0.05})
@@ -175,7 +176,7 @@ def plot_chart(data: ReportData) -> bytes:
     # Fibonacci
     for ratio, price in fib["niveles"]:
         ax.axhline(price, color=REFERENCE, linewidth=0.8, linestyle=(0, (2, 3)), zorder=1)
-        ax.annotate(f"Fib {ratio * 100:.1f}%  {price:.5f}", xy=(1.0, price), xycoords=("axes fraction", "data"),
+        ax.annotate(f"Fib {ratio * 100:.1f}%  {price:.{dg}f}", xy=(1.0, price), xycoords=("axes fraction", "data"),
                     xytext=(6, 0), textcoords="offset points", va="center", fontsize=7.5, color=TEXT_SECONDARY)
 
     # Posición abierta: entrada, SL y TP
@@ -186,7 +187,7 @@ def plot_chart(data: ReportData) -> bytes:
             if price is None or pd.isna(price):
                 continue
             ax.axhline(price, color=color, linewidth=1.4, linestyle=style, zorder=5)
-            ax.annotate(f"{label} {float(price):.5f}", xy=(0.0, float(price)), xycoords=("axes fraction", "data"),
+            ax.annotate(f"{label} {float(price):.{dg}f}", xy=(0.0, float(price)), xycoords=("axes fraction", "data"),
                         xytext=(4, 3), textcoords="offset points", fontsize=8, color=TEXT_PRIMARY, zorder=6)
 
     # Operaciones cerradas dentro de la ventana
@@ -239,7 +240,7 @@ def plot_chart(data: ReportData) -> bytes:
     ax_s.tick_params(axis="y", length=0)
 
     close = float(df["close"].iloc[-1])
-    ax.set_title(f"{data.pair} {data.granularity} · últimos {len(df)} periodos · cierre {close:.5f} · "
+    ax.set_title(f"{data.pair} {data.granularity} · últimos {len(df)} periodos · cierre {close:.{dg}f} · "
                  f"Fibonacci del movimiento {fib['tendencia']}", loc="left", fontsize=11, color=TEXT_PRIMARY, pad=10)
     legend = ax.legend(loc="upper left", frameon=False, fontsize=8)
     for t in legend.get_texts():
@@ -280,45 +281,66 @@ def _model_view(state: Optional[Dict[str, Any]]) -> Tuple[str, str]:
     return short, f"Vela {vela} UTC. " + ("; ".join(parts) if parts else "sin datos de probabilidad")
 
 
-def build_report(data: ReportData) -> Tuple[str, str, str]:
-    """(asunto, html, texto plano). El HTML referencia el gráfico como cid:grafico."""
-    ok = data.health.get("overall_status", "UP") == "UP"
+def _digits(pair: str) -> int:
+    """Decimales con que se cotiza: oro 2, yen 3, resto 5."""
+    p = pair.upper()
+    return 2 if p.startswith("XAU") else 3 if "JPY" in p else 5
+
+
+def _instrument_section(data: ReportData) -> Dict[str, Any]:
+    """Lo de un instrumento: qué ve el modelo, posiciones y operaciones de 24 h."""
+    d = _digits(data.pair)
     model_short, model_detail = _model_view(data.strategy_state)
-    since = data.now - timedelta(hours=24)
     closed = data.closed_orders
+    since = data.now - timedelta(hours=24)
     last24 = closed[pd.to_datetime(closed["closed_at"], utc=True) >= since] if not closed.empty else closed
-    stats = trade_stats(closed, data.initial_balance)
-    close = float(data.candles["close"].iloc[-1])
-    sessions = active_sessions(data.now)
 
-    upcoming = upcoming_sessions(data.now)
+    def px(v):
+        return f"{float(v):.{d}f}" if v is not None and not pd.isna(v) else "-"
+
+    open_rows = [[str(o["direction"]).upper(), px(o.get("entry_price")), px(o.get("stop_loss")),
+                  px(o.get("take_profit")), str(o.get("opened_at"))[:16]] for _, o in data.open_orders.iterrows()]
+    closed_rows = []
+    for _, o in last24.iterrows():
+        r = o.get("r_multiple")
+        closed_rows.append([str(o["direction"]).upper(), px(o.get("entry_price")), px(o.get("exit_price")),
+                            str(o.get("exit_reason") or "").upper(), _fmt_money(float(o.get("pnl") or 0)),
+                            f"{float(r):+.2f} R" if r is not None and not pd.isna(r) else "-"])
+    return {"pair": data.pair, "short": model_short, "detail": model_detail,
+            "close": px(data.candles["close"].iloc[-1]), "open_rows": open_rows, "closed_rows": closed_rows}
+
+
+def build_report(datas) -> Tuple[str, str, str]:
+    """
+    (asunto, html, texto plano) para uno o varios instrumentos. El HTML
+    referencia cada gráfico como cid:grafico_<PAR>. Estado del sistema, cuenta
+    y acumulado salen del primero (son comunes a todos).
+    """
+    datas = [datas] if isinstance(datas, ReportData) else list(datas)
+    first = datas[0]
+    ok = first.health.get("overall_status", "UP") == "UP"
+    sections = [_instrument_section(d) for d in datas]
+    closed_parts = [d.closed_orders for d in datas if not d.closed_orders.empty]
+    closed_all = pd.concat(closed_parts, ignore_index=True).sort_values("closed_at") if closed_parts else pd.DataFrame()
+    stats = trade_stats(closed_all, first.initial_balance)
+    sessions = active_sessions(first.now)
+    n_open = sum(len(d.open_orders) for d in datas)
+
+    upcoming = upcoming_sessions(first.now)
     title = f"Sesión de {' y '.join(upcoming)}" if upcoming else "Reporte"
-    subject = (f"[{title}] {data.pair} {data.now:%d/%m} ·{'✅ sistema OK' if ok else '⚠️ revisar sistema'} · "
-               f"{model_short} · {len(data.open_orders)} posición(es) abierta(s)")
+    signals = [f"{s['pair']} {s['short']}" for s in sections if s["short"].startswith("SEÑAL")]
+    subject = (f"[{title}] {first.now:%d/%m} · {'✅ sistema OK' if ok else '⚠️ revisar sistema'} · "
+               f"{', '.join(signals) if signals else 'sin señales'} · {n_open} posición(es) abierta(s)")
 
-    # Estado
     names = {"postgres": "Base de datos", "redis": "Redis", "broker": "Cuenta / execution-engine",
              "datos": "Velas (data-collector)", "estrategia": "Modelo (strategy-engine)"}
     status_icon = {"healthy": "✅", "unhealthy": "❌", "n/a": "➖"}
     health_rows = [(names[k], status_icon.get(v.get("status"), "?"), v.get("detail") or v.get("error") or "")
-                   for k, v in data.health.items() if k in names]
+                   for k, v in first.health.items() if k in names]
 
-    acc = data.account or {}
+    acc = first.account or {}
     account_line = (f"Balance {acc.get('balance', 0):,.2f} · Equity {acc.get('equity', 0):,.2f} {acc.get('currency', 'USD')}"
                     if acc else "sin datos de la cuenta")
-
-    def order_row(o, closed_row=False):
-        base = [str(o["direction"]).upper(), f"{float(o['entry_price']):.5f}" if o.get("entry_price") is not None else "-"]
-        if closed_row:
-            r = o.get("r_multiple")
-            return base + [f"{float(o['exit_price']):.5f}" if o.get("exit_price") is not None else "-",
-                           str(o.get("exit_reason") or "").upper(), _fmt_money(float(o.get("pnl") or 0)),
-                           f"{float(r):+.2f} R" if r is not None and not pd.isna(r) else "-"]
-        return base + [f"{float(o['stop_loss']):.5f}", f"{float(o['take_profit']):.5f}",
-                       str(o.get("opened_at"))[:16]]
-
-    open_rows = [order_row(o) for _, o in data.open_orders.iterrows()]
-    closed_rows = [order_row(o, True) for _, o in last24.iterrows()]
 
     if stats["operaciones"]:
         pf = "∞" if stats["profit_factor"] == float("inf") else f"{stats['profit_factor']:.2f}"
@@ -328,19 +350,19 @@ def build_report(data: ReportData) -> Tuple[str, str, str]:
                       ("Profit factor", pf), ("Expectativa", exp), ("Máx. drawdown", f"{stats['max_dd_pct']:.1f} %")]
     else:
         stats_rows = [("Operaciones", "ninguna todavía")]
-    ref = (f"Referencia del backtest (prueba final): ~{BACKTEST_REF['operaciones_mes']} operaciones/mes, "
+    ref = (f"Referencia del backtest de EUR_USD H1 (prueba final): ~{BACKTEST_REF['operaciones_mes']} operaciones/mes, "
            f"{BACKTEST_REF['expectativa_r']:+.2f} R por operación, profit factor {BACKTEST_REF['profit_factor']}.")
 
     # Texto plano
-    lines = [subject, "",
-             f"SISTEMA: {'todo OK' if ok else 'HAY COMPONENTES CON FALLO'}"]
+    lines = [subject, "", f"SISTEMA: {'todo OK' if ok else 'HAY COMPONENTES CON FALLO'}"]
     lines += [f"  {icon} {name}: {detail}" for name, icon, detail in health_rows]
-    lines += ["", f"MODELO: {model_detail}",
-              f"Precio actual {close:.5f}. Sesiones activas ahora: {', '.join(sessions) or 'ninguna (Asia)'}.",
-              "", f"CUENTA SIMULADA: {account_line}"]
-    lines += [f"  Abierta: {' | '.join(r)}" for r in open_rows] or ["  Sin posiciones abiertas."]
-    lines += ["", "ÚLTIMAS 24 H:"] + ([f"  {' | '.join(r)}" for r in closed_rows] or ["  Ninguna operación cerrada."])
-    lines += ["", "ACUMULADO:"] + [f"  {k}: {v}" for k, v in stats_rows] + [f"  {ref}"]
+    lines += ["", f"Sesiones activas ahora: {', '.join(sessions) or 'ninguna (Asia)'}."]
+    for s in sections:
+        lines += ["", f"== {s['pair']} · precio {s['close']} ==", f"MODELO: {s['detail']}"]
+        lines += [f"  Abierta: {' | '.join(r)}" for r in s["open_rows"]] or ["  Sin posiciones abiertas."]
+        lines += [f"  Cerrada (24 h): {' | '.join(r)}" for r in s["closed_rows"]]
+    lines += ["", f"CUENTA SIMULADA: {account_line}", "", "ACUMULADO (todos los instrumentos):"]
+    lines += [f"  {k}: {v}" for k, v in stats_rows] + [f"  {ref}"]
     lines += ["", "Modo simulación (DRY_RUN): no se envían órdenes a ningún broker."]
     text = "\n".join(lines)
 
@@ -353,28 +375,33 @@ def build_report(data: ReportData) -> Tuple[str, str, str]:
         return f"<table style='border-collapse:collapse;font-size:13px'><tr>{th}</tr>{trs}</table>"
 
     h2 = f"style='font-size:15px;margin:22px 0 8px;color:{TEXT_PRIMARY}'"
+    p = "style='font-size:13px;margin:0 0 8px'"
+    parts = []
+    for s in sections:
+        open_html = (table(["Dirección", "Entrada", "SL", "TP", "Abierta (UTC)"], s["open_rows"])
+                     if s["open_rows"] else f"<p {p}>Sin posiciones abiertas.</p>")
+        closed_html = (f"<p {p}><b>Cerradas en las últimas 24 h</b></p>"
+                       + table(["Dirección", "Entrada", "Salida", "Motivo", "Resultado", "R"], s["closed_rows"])
+                       if s["closed_rows"] else "")
+        parts.append(f"""
+<h2 {h2}>{s['pair']} · precio {s['close']}</h2>
+<p {p}>{s['detail']}</p>
+<img src="cid:grafico_{s['pair']}" alt="Gráfico de {s['pair']}" style="width:100%;max-width:900px">
+{open_html}
+{closed_html}""")
+
     html = f"""<html><body style="font-family:Arial,Helvetica,sans-serif;color:{TEXT_PRIMARY};background:{SURFACE};max-width:900px">
-<h1 style="font-size:19px;margin:0 0 4px">{title} · {data.pair} {data.granularity}</h1>
-<div style="color:{TEXT_SECONDARY};font-size:13px">{data.now:%d/%m/%Y %H:%M} UTC ({(data.now - timedelta(hours=5)):%H:%M} en Ecuador) · modo simulación (DRY_RUN)</div>
+<h1 style="font-size:19px;margin:0 0 4px">{title} · {', '.join(d.pair for d in datas)} · {first.granularity}</h1>
+<div style="color:{TEXT_SECONDARY};font-size:13px">{first.now:%d/%m/%Y %H:%M} UTC ({(first.now - timedelta(hours=5)):%H:%M} en Ecuador) · modo simulación (DRY_RUN) · sesiones activas: {', '.join(sessions) or 'ninguna (Asia)'}</div>
 
 <h2 {h2}>{'✅ Sistema funcionando' if ok else '⚠️ Hay componentes con fallo'}</h2>
 {table(["Componente", "", "Detalle"], health_rows)}
-
-<h2 {h2}>Qué ve el modelo</h2>
-<p style="font-size:13px;margin:0">{model_detail}<br>Precio actual <b>{close:.5f}</b>. Sesiones activas ahora:
-{', '.join(sessions) or 'ninguna (sesión de Asia)'}.</p>
-
-<h2 {h2}>Gráfico</h2>
-<img src="cid:grafico" alt="Gráfico de {data.pair}" style="width:100%;max-width:900px">
+{''.join(parts)}
 
 <h2 {h2}>Cuenta simulada</h2>
-<p style="font-size:13px;margin:0 0 8px">{account_line}</p>
-{table(["Dirección", "Entrada", "SL", "TP", "Abierta (UTC)"], open_rows) if open_rows else "<p style='font-size:13px'>Sin posiciones abiertas.</p>"}
+<p {p}>{account_line}</p>
 
-<h2 {h2}>Operaciones cerradas en las últimas 24 h</h2>
-{table(["Dirección", "Entrada", "Salida", "Motivo", "Resultado", "R"], closed_rows) if closed_rows else "<p style='font-size:13px'>Ninguna.</p>"}
-
-<h2 {h2}>Acumulado desde el inicio</h2>
+<h2 {h2}>Acumulado desde el inicio (todos los instrumentos)</h2>
 {table(["", ""], stats_rows)}
 <p style="font-size:12px;color:{TEXT_SECONDARY}">{ref} El modelo no tiene ventaja probada: este periodo sirve para comprobarlo.</p>
 </body></html>"""
@@ -383,42 +410,56 @@ def build_report(data: ReportData) -> Tuple[str, str, str]:
 
 # ---------------------------------------------------------------- datos y envío
 
-def collect(bus, checker, now: Optional[datetime] = None) -> ReportData:
-    import psycopg2
+def _load_pair(conn, pair: str, gran: str):
     import psycopg2.extras
 
+    candles = pd.read_sql(
+        "SELECT timestamp, open, high, low, close FROM candles WHERE pair = %s AND granularity = %s AND complete "
+        "ORDER BY timestamp DESC LIMIT 600", conn, params=(pair, gran))
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT * FROM orders WHERE pair = %s AND status = 'filled' ORDER BY opened_at", (pair,))
+        open_orders = pd.DataFrame(cur.fetchall())
+        cur.execute("SELECT * FROM orders WHERE pair = %s AND status = 'closed' ORDER BY closed_at", (pair,))
+        closed = pd.DataFrame(cur.fetchall())
+    if not candles.empty:
+        candles["timestamp"] = pd.to_datetime(candles["timestamp"], utc=True)
+        candles = candles.set_index("timestamp").sort_index().astype(float)
+    return candles, open_orders, closed
+
+
+def collect(bus, checker, now: Optional[datetime] = None) -> List[ReportData]:
+    """Un ReportData por cada par de FOREX_PAIRS que tenga velas en la BD."""
+    import psycopg2
+
     now = now or datetime.now(timezone.utc)
-    pair, gran = settings.forex_pairs[0], settings.candle_granularity
+    gran = settings.candle_granularity
+    health = checker.run_full_check()
+    account = bus.get_json(settings.key_account_snapshot)
     conn = psycopg2.connect(settings.postgres_dsn, connect_timeout=5)
+    out = []
     try:
-        candles = pd.read_sql(
-            "SELECT timestamp, open, high, low, close FROM candles WHERE pair = %s AND granularity = %s AND complete "
-            "ORDER BY timestamp DESC LIMIT 600", conn, params=(pair, gran))
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM orders WHERE pair = %s AND status = 'filled' ORDER BY opened_at", (pair,))
-            open_orders = pd.DataFrame(cur.fetchall())
-            cur.execute("SELECT * FROM orders WHERE pair = %s AND status = 'closed' ORDER BY closed_at", (pair,))
-            closed = pd.DataFrame(cur.fetchall())
+        for pair in settings.forex_pairs:
+            candles, open_orders, closed = _load_pair(conn, pair, gran)
+            if candles.empty:
+                log.warning(f"Reporte: no hay velas de {pair} {gran} en la BD; se omite.")
+                continue
+            out.append(ReportData(
+                pair=pair, granularity=gran, now=now, candles=candles, health=health,
+                strategy_state=bus.get_json(f"{settings.key_strategy_state_prefix}{pair}"), account=account,
+                open_orders=open_orders, closed_orders=closed, initial_balance=settings.sim_initial_balance,
+            ))
     finally:
         conn.close()
-    if candles.empty:
-        raise RuntimeError(f"No hay velas de {pair} {gran} en la BD")
-    candles["timestamp"] = pd.to_datetime(candles["timestamp"], utc=True)
-    candles = candles.set_index("timestamp").sort_index().astype(float)
-
-    return ReportData(
-        pair=pair, granularity=gran, now=now, candles=candles,
-        health=checker.run_full_check(),
-        strategy_state=bus.get_json(f"{settings.key_strategy_state_prefix}{pair}"),
-        account=bus.get_json(settings.key_account_snapshot),
-        open_orders=open_orders, closed_orders=closed, initial_balance=settings.sim_initial_balance,
-    )
+    if not out:
+        raise RuntimeError(f"No hay velas de ningún par ({settings.forex_pairs}) en la BD")
+    return out
 
 
 def send_daily_report(email, telegram, bus, checker, now: Optional[datetime] = None) -> bool:
-    data = collect(bus, checker, now)
-    subject, html, text = build_report(data)
-    sent = email.send_html(subject, html, text, images={"grafico": plot_chart(data)})
+    datas = collect(bus, checker, now)
+    subject, html, text = build_report(datas)
+    images = {f"grafico_{d.pair}": plot_chart(d) for d in datas}
+    sent = email.send_html(subject, html, text, images=images)
     telegram.send_message(text.replace("_", "/"))  # "_" rompe el Markdown de Telegram
     return sent
 
@@ -437,12 +478,14 @@ def main():
     bus, checker = EventBus(), HealthChecker()
     try:
         if args.guardar:
-            data = collect(bus, checker)
-            subject, html, _ = build_report(data)
+            datas = collect(bus, checker)
+            subject, html, _ = build_report(datas)
             out = Path(args.guardar)
             out.mkdir(parents=True, exist_ok=True)
-            (out / "grafico.png").write_bytes(plot_chart(data))
-            (out / "reporte.html").write_text(html.replace("cid:grafico", "grafico.png"), encoding="utf-8")
+            for d in datas:
+                (out / f"grafico_{d.pair}.png").write_bytes(plot_chart(d))
+                html = html.replace(f"cid:grafico_{d.pair}", f"grafico_{d.pair}.png")
+            (out / "reporte.html").write_text(html, encoding="utf-8")
             print(f"[v] {subject}\n    -> {out / 'reporte.html'}")
         elif args.enviar:
             ok = send_daily_report(EmailNotifier(), TelegramNotifier(), bus, checker)
