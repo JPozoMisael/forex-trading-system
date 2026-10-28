@@ -100,6 +100,7 @@ def test_report_slots_before_london_and_new_york():
     assert due_slot(datetime(2026, 10, 31, 6, 30, tzinfo=UTC), None, TIMES) is None  # sábado
     assert upcoming_sessions(at(6, 30)) == ["Londres"]
     assert upcoming_sessions(at(11, 0)) == ["Nueva York"]
+    assert upcoming_sessions(at(13, 0)) == ["Nueva York"]  # el reporte de las 8:00 de Ecuador
 
 
 def test_one_email_per_slot_through_real_redis_round_trip():

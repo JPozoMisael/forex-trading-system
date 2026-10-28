@@ -91,8 +91,8 @@ def due_slot(now: datetime, last_sent: Optional[str], times_utc: List[str]) -> O
 
 
 def upcoming_sessions(now: datetime) -> List[str]:
-    """Sesiones que abren en las próximas 2 horas (para titular el reporte)."""
-    return [name for name, (a, _) in SESSIONS.items() if 0 <= a * 60 - (now.hour * 60 + now.minute) <= 120]
+    """Sesiones que abren en las próximas 2 horas o abrieron hace menos de 2 (para titular el reporte)."""
+    return [name for name, (a, _) in SESSIONS.items() if abs(a * 60 - (now.hour * 60 + now.minute)) <= 120]
 
 
 def fibonacci_levels(df: pd.DataFrame) -> Dict[str, Any]:
@@ -292,7 +292,7 @@ def build_report(data: ReportData) -> Tuple[str, str, str]:
     sessions = active_sessions(data.now)
 
     upcoming = upcoming_sessions(data.now)
-    title = f"Antes de {' y '.join(upcoming)}" if upcoming else "Reporte"
+    title = f"Sesión de {' y '.join(upcoming)}" if upcoming else "Reporte"
     subject = (f"[{title}] {data.pair} {data.now:%d/%m} ·{'✅ sistema OK' if ok else '⚠️ revisar sistema'} · "
                f"{model_short} · {len(data.open_orders)} posición(es) abierta(s)")
 
