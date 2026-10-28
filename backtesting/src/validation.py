@@ -26,7 +26,7 @@ import pandas as pd
 
 from engine import BacktestEngine
 from metrics import BacktestMetrics, calculate_metrics
-from shared.fx import STANDARD_LOT, get_pip_size, quote_to_usd_rate
+from shared.fx import contract_size, get_pip_size, quote_to_usd_rate
 from shared.models import OrderSide, Signal
 from strategies.base_strategy import BaseStrategy
 
@@ -156,7 +156,7 @@ def opposite_r(trade: Dict[str, Any], seg: pd.DataFrame, pair: str, spread_pips:
 
     diff = (exit_price - entry) if side == OrderSide.BUY else (entry - exit_price)
     units = trade["units"]
-    pnl = diff * units * quote_to_usd_rate(pair, exit_price) - units / STANDARD_LOT * commission_per_lot
+    pnl = diff * units * quote_to_usd_rate(pair, exit_price) - units / contract_size(pair) * commission_per_lot
     risk = sl_d * units * quote_to_usd_rate(pair, entry)
     return pnl / risk if risk > 0 else 0.0
 
@@ -173,7 +173,7 @@ def buy_and_hold(seg: pd.DataFrame, balance: float, pair: str, spread_pips: floa
     hs, slip = spread_pips * pip / 2, slippage_pips * pip
     entry = float(seg["open"].iloc[0]) + hs + slip
     units = int(balance / (entry * quote_to_usd_rate(pair, entry)))
-    comm = units / STANDARD_LOT * commission_per_lot
+    comm = units / contract_size(pair) * commission_per_lot
     bid = seg["close"] - hs
     rate = bid.map(lambda p: quote_to_usd_rate(pair, p))
     equity = balance + (bid - entry) * units * rate - comm

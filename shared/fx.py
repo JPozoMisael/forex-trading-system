@@ -9,10 +9,42 @@ from typing import Optional
 from shared.models import SymbolSpec
 
 STANDARD_LOT = 100_000
+GOLD_LOT = 100  # 1 lote de oro = 100 onzas
+
+# Costes de un broker minorista por instrumento (pips de get_pip_size): los usa la
+# investigación (config.yaml -> instrument_config) y el broker simulado en vivo.
+# Fijados el 2026-10-28 ANTES de validar: spread mediano de Dukascopy de los últimos
+# 60 días + el recargo de un broker minorista (como EUR_USD: 0.3 -> 1.0).
+# Oro: pip 0.01 USD; spread 50 = $0.50 por onza, slippage 10 = $0.10.
+INSTRUMENT_COSTS = {
+    "EUR_USD": {"spread_pips": 1.0, "slippage_pips": 0.3},
+    "GBP_USD": {"spread_pips": 1.3, "slippage_pips": 0.3},
+    "USD_JPY": {"spread_pips": 1.2, "slippage_pips": 0.3},
+    "AUD_USD": {"spread_pips": 1.3, "slippage_pips": 0.3},
+    "XAU_USD": {"spread_pips": 50.0, "slippage_pips": 10.0},
+}
+DEFAULT_COSTS = {"spread_pips": 1.5, "slippage_pips": 0.3}
 
 
 def normalize_pair(pair: str) -> str:
     return pair.upper().replace("/", "_").replace("-", "_")
+
+
+def contract_size(pair: str) -> int:
+    """Unidades por lote estándar: 100.000 en divisas, 100 onzas en oro."""
+    return GOLD_LOT if normalize_pair(pair).startswith("XAU") else STANDARD_LOT
+
+
+def instrument_costs(pair: str) -> dict:
+    return dict(INSTRUMENT_COSTS.get(normalize_pair(pair), DEFAULT_COSTS))
+
+
+def max_spread_pips(pair: str, configured: float) -> float:
+    """
+    Spread máximo aceptable: el configurado (MAX_SPREAD_PIPS, pensado para
+    divisas) o 2.5 veces el típico del instrumento si es mayor (oro).
+    """
+    return max(configured, 2.5 * instrument_costs(pair)["spread_pips"])
 
 
 def get_pip_size(pair: str) -> float:
@@ -47,7 +79,7 @@ def pnl_in_usd(pair: str, price_diff: float, units: float, exit_price: float) ->
     return price_diff * units * rate
 
 
-def simulated_symbol_spec(pair: str, price: float, spread_pips: float = 1.0) -> Optional[SymbolSpec]:
+def simulated_symbol_spec(pair: str, price: float, spread_pips: Optional[float] = None) -> Optional[SymbolSpec]:
     """
     Especificación de símbolo estilo MT5 para el modo simulación, con cuenta en USD.
     Devuelve None para cruces sin conversión directa a USD.
@@ -55,16 +87,19 @@ def simulated_symbol_spec(pair: str, price: float, spread_pips: float = 1.0) -> 
     rate = quote_to_usd_rate(pair, price)
     if rate is None:
         return None
+    if spread_pips is None:
+        spread_pips = instrument_costs(pair)["spread_pips"]
     pip = get_pip_size(pair)
     point = pip / 10.0
+    lot = contract_size(pair)
     return SymbolSpec(
         pair=normalize_pair(pair),
         symbol=normalize_pair(pair).replace("_", ""),
         digits=3 if pip == 0.01 else 5,
         point=point,
         tick_size=point,
-        tick_value=point * STANDARD_LOT * rate,
-        contract_size=STANDARD_LOT,
+        tick_value=point * lot * rate,
+        contract_size=lot,
         volume_min=0.01,
         volume_max=100.0,
         volume_step=0.01,

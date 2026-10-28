@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from shared.models import Signal, SignalDirection, OrderSide
 from strategies.base_strategy import BaseStrategy
 from position_sizing import calculate_position_size, get_pip_size
-from shared.fx import quote_to_usd_rate, STANDARD_LOT
+from shared.fx import contract_size, quote_to_usd_rate
 from metrics import BacktestMetrics, calculate_metrics
 
 
@@ -203,7 +203,7 @@ class BacktestEngine:
         is_buy = trade["side"] == OrderSide.BUY
         diff = (exit_price - trade["entry_price"]) if is_buy else (trade["entry_price"] - exit_price)
         gross = diff * trade["units"] * quote_to_usd_rate(pair, exit_price)  # en USD
-        comm = trade["units"] / STANDARD_LOT * self.commission_per_lot
+        comm = trade["units"] / contract_size(pair) * self.commission_per_lot
         return gross - comm, comm, diff
 
     def _open_trade(

@@ -14,7 +14,7 @@ from psycopg2.extras import Json
 
 from shared.bus import EventBus
 from shared.config import settings
-from shared.fx import get_pip_size
+from shared.fx import get_pip_size, max_spread_pips
 from shared.logger import get_logger
 from shared.models import (
     ACTIVE_ORDER_STATUSES,
@@ -89,8 +89,9 @@ def evaluate_signal(
         return _reject(f"Sin especificación del símbolo {signal.pair} (¿par no disponible en el broker?)", account)
     pip_size = get_pip_size(signal.pair)
     spread_pips = spec.spread_points * spec.point / pip_size
-    if spread_pips > settings.max_spread_pips:
-        return _reject(f"Spread demasiado alto ({spread_pips:.1f} > {settings.max_spread_pips} pips)", account)
+    spread_limit = max_spread_pips(signal.pair, settings.max_spread_pips)
+    if spread_pips > spread_limit:
+        return _reject(f"Spread demasiado alto ({spread_pips:.1f} > {spread_limit:g} pips)", account)
 
     # 6. Stop Loss / Take Profit (por defecto si la estrategia no los trae) y lado correcto
     entry = signal.entry_price

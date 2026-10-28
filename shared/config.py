@@ -177,3 +177,21 @@ def load_trading_config(path: Optional[Path] = None) -> Dict[str, Any]:
 
     with open(path or CONFIG_YAML_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+def instrument_config(cfg: Dict[str, Any], pair: str, granularity: Optional[str] = None) -> Dict[str, Any]:
+    """
+    config.yaml para un instrumento: `mercado.par` (y la temporalidad si se da) y
+    sus costes de shared/fx.py (INSTRUMENT_COSTS). El resto (modelo, riesgo,
+    validación) es el mismo para todos.
+    """
+    import copy
+
+    from shared.fx import instrument_costs, normalize_pair
+
+    out = copy.deepcopy(cfg)
+    out["mercado"]["par"] = normalize_pair(pair)
+    if granularity:
+        out["mercado"]["temporalidad"] = granularity.upper()
+    out["costes"].update(instrument_costs(pair))
+    return out

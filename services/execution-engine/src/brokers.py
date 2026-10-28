@@ -15,7 +15,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from shared.config import settings
-from shared.fx import get_pip_size, pnl_in_usd, simulated_symbol_spec
+from shared.fx import get_pip_size, instrument_costs, pnl_in_usd, simulated_symbol_spec
 from shared.logger import get_logger
 from shared.models import AccountSummary, OrderRequest, OrderSide, SymbolSpec
 
@@ -116,7 +116,6 @@ class SimulatedBroker(Broker):
     """
 
     mode = "sim"
-    SPREAD_PIPS = 1.0
 
     def __init__(self, dsn: Optional[str] = None):
         self.dsn = dsn or settings.postgres_dsn
@@ -179,13 +178,13 @@ class SimulatedBroker(Broker):
         price = self._last_close(pair)
         if price is None:
             return None
-        return simulated_symbol_spec(pair, price, spread_pips=self.SPREAD_PIPS)
+        return simulated_symbol_spec(pair, price)  # spread típico del instrumento (shared/fx.py)
 
     def market_order(self, req: OrderRequest) -> Dict[str, Any]:
         price = self._last_close(req.pair)
         if price is None or req.entry_price is None or req.stop_loss is None or req.take_profit is None:
             return {"ok": False, "error": "Sin precio en BD o la orden no trae SL/TP"}
-        half_spread = self.SPREAD_PIPS * get_pip_size(req.pair) / 2
+        half_spread = instrument_costs(req.pair)["spread_pips"] * get_pip_size(req.pair) / 2
         sl_dist = abs(req.entry_price - req.stop_loss)
         tp_dist = abs(req.take_profit - req.entry_price)
         if req.direction == OrderSide.BUY:

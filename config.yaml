@@ -91,3 +91,27 @@ experimentos:
 
 paper_trading:
   carpeta_logs: logs/paper
+
+# --------------------------------------------------------------------------
+# Más instrumentos y temporalidades. PRE-REGISTRADO el 2026-10-28, antes de correr:
+#   - Mismo modelo v1_base para todos, sin ajustar nada por instrumento (los
+#     parámetros se eligieron en el desarrollo de EUR_USD H1).
+#   - Costes por instrumento en shared/fx.py (INSTRUMENT_COSTS); el resto de
+#     `costes` (comisión) es el mismo.
+#   - Una sola pasada en la prueba final (desde validacion.inicio_prueba_final),
+#     con backtesting/src/run_instrumentos.py.
+#   - Regla para activarlo en PAPER TRADING (DRY_RUN): veredicto VENTAJA CON
+#     EVIDENCIA o POSITIVO PERO NO CONCLUYENTE y retorno neto > 0, igual que
+#     EUR_USD H1. Para dinero real: VENTAJA CON EVIDENCIA con p < 0.05 / número de
+#     combinaciones probadas (corrección de Bonferroni: con muchas pruebas alguna
+#     sale bien por azar).
+#   - En vivo el sistema usa UNA temporalidad (CANDLE_GRANULARITY). Si gana una
+#     temporalidad distinta de H1 se decide aparte.
+multi_instrumento:
+  instrumentos: [EUR_USD, GBP_USD, USD_JPY, AUD_USD, XAU_USD]
+  temporalidades: [H1, M30, M15]
+
+# Instrumentos que opera el strategy-engine (cada uno con su modelo). Solo se
+# añaden los que cumplan la regla de arriba.
+produccion:
+  activos: [EUR_USD]
