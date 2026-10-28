@@ -109,8 +109,24 @@ def test_strategy_engine_builds_active_strategies(candles, fake_fetch, tmp_path)
     with pytest.raises(ValueError):
         engine.build_strategies([], tmp_path)
 
-    # "ml" carga el modelo guardado (aquí uno pequeño entrenado con datos sintéticos)
-    serving.load_or_train(CFG, tmp_path, log=lambda m: None, fetch=fake_fetch,
-                          now=candles.index[-1] + pd.Timedelta(hours=2))
-    (ml,) = engine.build_strategies(["ml"], tmp_path)
-    assert ml.name == "ML_LightGBM" and ml.supports("EUR_USD", "H1")
+
+
+def test_one_model_per_active_instrument(candles, fake_fetch, tmp_path, monkeypatch):
+    import dataclasses
+
+    from shared.config import instrument_config
+
+    engine = _load_strategy_engine_main()
+    monkeypatch.setattr(engine, "settings",
+                        dataclasses.replace(engine.settings, forex_pairs=["EUR_USD", "XAU_USD", "GBP_USD"],
+                                            candle_granularity="H1"))
+    cfg = dict(CFG, produccion={"activos": ["EUR_USD", "XAU_USD", "USD_JPY"]})
+    now = candles.index[-1] + pd.Timedelta(hours=2)
+    for pair in ("EUR_USD", "XAU_USD"):  # modelos ya guardados (pequeños, datos sintéticos)
+        serving.load_or_train(instrument_config(cfg, pair), tmp_path, log=lambda m: None, fetch=fake_fetch, now=now)
+
+    strategies = engine.build_ml_strategies(cfg, tmp_path)
+    # USD_JPY está activo pero no llega por FOREX_PAIRS: se omite (y se avisa en el log)
+    assert [s.pair for s in strategies] == ["EUR_USD", "XAU_USD"]
+    gold = strategies[1]
+    assert gold.spread_pips == 50.0 and gold.supports("XAU_USD", "H1") and not gold.supports("EUR_USD", "H1")

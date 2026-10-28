@@ -42,7 +42,14 @@ FIB_RATIOS = (0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0)
 CHART_BARS = 120  # 5 días de H1
 
 # Referencia de la prueba final (2023-10 a 2026-10, 76 operaciones en 36 meses)
-BACKTEST_REF = {"operaciones_mes": 2.1, "expectativa_r": 0.04, "profit_factor": 1.05}
+def backtest_refs() -> Dict[str, Dict[str, float]]:
+    """Resultado de la prueba final por instrumento (config.yaml, produccion.referencia_backtest)."""
+    try:
+        from shared.config import load_trading_config
+
+        return (load_trading_config().get("produccion") or {}).get("referencia_backtest") or {}
+    except Exception:
+        return {}
 
 # Colores (skill dataviz, modo claro). Alcista/bajista = slots validados verde y naranja.
 SURFACE = "#fcfcfb"
@@ -297,7 +304,19 @@ def _model_view(state: Optional[Dict[str, Any]], gran_minutes: int = 60) -> Tupl
             text += f" → Señal de {side}."
         elif "p_long" in s:
             text += " → Sin señal: ninguna llega, así que no hace nada."
+    if not any("p_long" in s or s.get("error") for s in (state.get("estrategias") or {}).values()):
+        text += (" Este instrumento NO pasó la prueba del modelo: se muestra el gráfico para que lo sigas, "
+                 "pero el sistema no opera aquí.")
+        short = "no opera"
     return short, text
+
+
+def _ref_text(pair: str, refs: Dict[str, Dict[str, float]]) -> str:
+    r = refs.get(pair.upper())
+    if not r:
+        return ""
+    return (f"Lo que dio la prueba (oct 2023 - oct 2026): ~{r['operaciones_mes']} operaciones al mes, "
+            f"{r['retorno_pct']:+.1f} % en 3 años (comprar y mantener: {r['buy_hold_pct']:+.1f} %).")
 
 
 def _position_text(o, pair: str, price: float, digits: int) -> str:
@@ -334,7 +353,7 @@ def _digits(pair: str) -> int:
     return 2 if p.startswith("XAU") else 3 if "JPY" in p else 5
 
 
-def _instrument_section(data: ReportData) -> Dict[str, Any]:
+def _instrument_section(data: ReportData, refs: Optional[Dict] = None) -> Dict[str, Any]:
     """Lo de un instrumento: qué ve el modelo, posiciones y operaciones de 24 h."""
     d = _digits(data.pair)
     gran_minutes = GRANULARITY_MINUTES.get(data.granularity.upper(), 60)
@@ -362,7 +381,8 @@ def _instrument_section(data: ReportData) -> Dict[str, Any]:
                             f"{float(r):+.2f} R" if r is not None and not pd.isna(r) else "-"])
     if model_short.startswith("SEÑAL") and open_rows:
         model_detail += " Como ya hay una posición abierta en este instrumento, no se abre otra."
-    return {"pair": data.pair, "name": display_name(data.pair), "short": model_short, "detail": model_detail,
+    ref = _ref_text(data.pair, refs if refs is not None else backtest_refs())
+    return {"pair": data.pair, "name": display_name(data.pair), "short": model_short, "detail": model_detail, "ref": ref,
             "close": px(price),
             "open_rows": open_rows, "open_texts": open_texts, "closed_rows": closed_rows}
 
@@ -376,7 +396,8 @@ def build_report(datas) -> Tuple[str, str, str]:
     datas = [datas] if isinstance(datas, ReportData) else list(datas)
     first = datas[0]
     ok = first.health.get("overall_status", "UP") == "UP"
-    sections = [_instrument_section(d) for d in datas]
+    refs = backtest_refs()
+    sections = [_instrument_section(d, refs) for d in datas]
     closed_parts = [d.closed_orders for d in datas if not d.closed_orders.empty]
     closed_all = pd.concat(closed_parts, ignore_index=True).sort_values("closed_at") if closed_parts else pd.DataFrame()
     stats = trade_stats(closed_all, first.initial_balance)
@@ -410,15 +431,15 @@ def build_report(datas) -> Tuple[str, str, str]:
                       ("Profit factor", pf), ("Expectativa", exp), ("Máx. drawdown", f"{stats['max_dd_pct']:.1f} %")]
     else:
         stats_rows = [("Operaciones", "ninguna todavía")]
-    ref = (f"Referencia del backtest de EUR_USD H1 (prueba final): ~{BACKTEST_REF['operaciones_mes']} operaciones/mes, "
-           f"{BACKTEST_REF['expectativa_r']:+.2f} R por operación, profit factor {BACKTEST_REF['profit_factor']}.")
+    ref = ("Cada instrumento muestra lo que dio su prueba con datos de 2023 a 2026; estas semanas sirven para "
+           "comprobar si en vivo se parece.")
 
     # Texto plano
     lines = [subject, "", when, "", f"SISTEMA: {'todo OK' if ok else 'HAY COMPONENTES CON FALLO'}"]
     lines += [f"  {icon} {name}: {detail}" for name, icon, detail in health_rows]
     lines += ["", sessions_now]
     for s in sections:
-        lines += ["", f"== {s['name']} · precio {s['close']} ==", f"MODELO: {s['detail']}"]
+        lines += ["", f"== {s['name']} · precio {s['close']} ==", f"MODELO: {s['detail']}"] + ([f"  {s['ref']}"] if s["ref"] else [])
         lines += [f"  POSICIÓN: {t}" for t in s["open_texts"]] or ["  Sin posiciones abiertas."]
         lines += [f"  Cerrada (24 h): {' | '.join(r)}" for r in s["closed_rows"]]
     lines += ["", f"CUENTA SIMULADA: {account_line}", "", "ACUMULADO (todos los instrumentos):"]
@@ -447,6 +468,7 @@ def build_report(datas) -> Tuple[str, str, str]:
         parts.append(f"""
 <h2 {h2}>{s['name']} · precio {s['close']}</h2>
 <p {p}>{s['detail']}</p>
+{f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:0 0 8px'>{s['ref']}</p>" if s['ref'] else ""}
 <img src="cid:grafico_{s['pair']}" alt="Gráfico de {s['name']}" style="width:100%;max-width:900px">
 {open_html}
 {closed_html}""")

@@ -42,7 +42,20 @@ Par, temporalidad, costos (spread, slippage, comisión), riesgo (% por operació
 | Paper trading | `backtesting/src/paper_trader.py` | Mismas reglas que el backtest; estado y logs en `logs/paper/` |
 | En el sistema desplegado | `services/strategy-engine/src/ml/serving.py` | Con `ACTIVE_STRATEGIES=ml` el strategy-engine carga `models/ml_<PAR>_<TF>.joblib` o, si no existe, lo entrena al arrancar (~1 min) |
 
-### Resultado actual (2026-10-27): **el modelo NO tiene ventaja probada**
+### Más instrumentos (2026-10-28)
+Mismo modelo, sin ajustes, en la prueba final con los costos de cada instrumento (`python backtesting/src/run_instrumentos.py`). En H1:
+
+| Instrumento | Retorno | Comprar y mantener | Ops | Veredicto | En paper trading |
+|---|---|---|---|---|---|
+| EUR/USD | +1.8 % | +5.3 % | 77 | Positivo no concluyente | sí |
+| USD/JPY | +7.2 % | +3.3 % | 68 | Positivo no concluyente | sí |
+| Oro (XAU/USD) | +7.2 % | +103.4 % | 93 | Positivo no concluyente (p = 0.023) | sí |
+| GBP/USD | −19.4 % | +9.5 % | 76 | Sin ventaja | no |
+| AUD/USD | −0.1 % | +10.8 % | 38 | Positivo, pero retorno ≤ 0 | no |
+
+Ninguno alcanza la evidencia exigida para dinero real (p < 0.05 / 15 pruebas). Detalle de M30 y M15 en `docs/BITACORA.md`.
+
+### Resultado del modelo EUR/USD (2026-10-27): **el modelo NO tiene ventaja probada**
 Protocolo: las variantes se comparan solo en el periodo de **desarrollo** (2014-10 a 2023-10) y la elegida se evalúa **una vez** en la **prueba final** (2023-10 a 2026-10), con costos.
 
 | Prueba final (2023-10 a 2026-10) | Retorno | Max DD | Profit factor | Ops |

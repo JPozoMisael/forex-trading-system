@@ -239,3 +239,21 @@ def test_repeated_signal_with_open_position_is_not_emailed():
     assert m.is_redundant(s.channel_signals_new, {"pair": "EUR_USD", "timestamp": "2026-10-28T14:00:00+00:00"}, open_pos)
     assert not m.is_redundant(s.channel_signals_new, {"pair": "XAU_USD"}, open_pos)   # señal nueva: se avisa
     assert not m.is_redundant(s.channel_orders_closed, {"pair": "EUR_USD"}, open_pos)  # cierres siempre
+
+
+def test_instrument_without_model_says_it_does_not_trade():
+    data = _report_data(with_trades=False)
+    data.pair = "GBP_USD"
+    data.strategy_state = {"vela": data.candles.index[-1].isoformat(), "estrategias": {}}
+    subject, _, text = build_report(data)
+    assert "NO pasó la prueba del modelo" in text and "no opera aquí" in text
+    assert "sin señales" in subject
+
+
+def test_reference_of_each_instrument_comes_from_config():
+    from daily_report import _ref_text, backtest_refs
+
+    refs = backtest_refs()
+    assert {"EUR_USD", "USD_JPY", "XAU_USD"} <= set(refs)
+    assert "comprar y mantener: +103.4 %" in _ref_text("XAU_USD", refs)
+    assert _ref_text("GBP_USD", refs) == ""

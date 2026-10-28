@@ -113,5 +113,15 @@ multi_instrumento:
 
 # Instrumentos que opera el strategy-engine (cada uno con su modelo). Solo se
 # añaden los que cumplan la regla de arriba.
+# Resultado del 2026-10-28 (reports/20261028_1541_instrumentos.md): en H1 cumplen
+# EUR_USD, USD_JPY y XAU_USD (POSITIVO PERO NO CONCLUYENTE; ninguno llega a la
+# evidencia exigida para dinero real). GBP_USD pierde y AUD_USD queda en cero.
+# M30/M15: cumplen EUR_USD/USD_JPY/AUD_USD M30 y USD_JPY M15, pero el sistema en
+# vivo usa una sola temporalidad (H1); quedan como resultado aparte.
 produccion:
-  activos: [EUR_USD]
+  activos: [EUR_USD, USD_JPY, XAU_USD]
+  # Lo que dio la prueba final, para comparar con el paper trading en el reporte
+  referencia_backtest:
+    EUR_USD: {operaciones_mes: 2.1, expectativa_r: 0.03, profit_factor: 1.04, retorno_pct: 1.8, buy_hold_pct: 5.3}
+    USD_JPY: {operaciones_mes: 1.9, expectativa_r: 0.11, profit_factor: 1.17, retorno_pct: 7.2, buy_hold_pct: 3.3}
+    XAU_USD: {operaciones_mes: 2.6, expectativa_r: 0.13, profit_factor: 1.17, retorno_pct: 7.2, buy_hold_pct: 103.4}

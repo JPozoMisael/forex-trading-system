@@ -14,6 +14,21 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
   - las sesiones en hora local;
   - `REPORT_TIMES=01:30,08:00` en hora local (reemplaza a `REPORT_TIMES_UTC`).
 - **Oro y más pares:** lote de 100 onzas y costes por instrumento en `shared/fx.py`. Protocolo pre-registrado en `config.yaml` (`multi_instrumento`, commit `9daa499`) y corrido con `backtesting/src/run_instrumentos.py`. El strategy-engine carga un modelo por cada instrumento de `produccion.activos`.
+- **Resultado de la prueba final, una pasada** (oct 2023 → oct 2026, `reports/20261028_1541_instrumentos.md`):
+
+  | H1 | Retorno | Comprar y mantener | Ops | Expectativa | p | Veredicto |
+  |---|---|---|---|---|---|---|
+  | EUR_USD | +1.8 % | +5.3 % | 77 | +0.03 R | 0.34 | Positivo no concluyente |
+  | GBP_USD | −19.4 % | +9.5 % | 76 | −0.28 R | 0.87 | Sin ventaja |
+  | USD_JPY | +7.2 % | +3.3 % | 68 | +0.11 R | 0.11 | Positivo no concluyente |
+  | AUD_USD | −0.1 % | +10.8 % | 38 | +0.01 R | 0.22 | Retorno ≤ 0: no cumple |
+  | XAU_USD | +7.2 % | **+103.4 %** | 93 | +0.13 R | 0.023 | Positivo no concluyente |
+
+  - M30 y M15: cumplen EUR_USD, USD_JPY y AUD_USD en M30 y USD_JPY en M15; el resto no. El oro no funciona por debajo de H1.
+  - **Ninguna combinación llega a la evidencia para dinero real** (p < 0.0033 tras 15 pruebas). Con 15 pruebas cabe esperar ~0.8 "positivas" por azar.
+  - El oro gana +7.2 % con un drawdown del 8 %, pero comprar y mantener oro dio +103 % en un mercado muy alcista.
+- **Activados en paper trading (H1):** EUR_USD, USD_JPY y XAU_USD (`produccion.activos`). GBP_USD y AUD_USD solo aparecen en el reporte, marcados como "no opera". El reporte muestra la referencia de la prueba de cada instrumento.
+- **Pendiente en Dokploy:** `FOREX_PAIRS=EUR_USD,USD_JPY,XAU_USD,GBP_USD,AUD_USD`. Al arrancar se entrenan 3 modelos (~2-3 min).
 
 ## 2026-10-27 (arreglo: reporte repetido cada minuto) · DESKTOP-RC7UDV1
 
