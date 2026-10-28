@@ -14,6 +14,7 @@ import psycopg2
 from shared.config import settings
 from shared.logger import get_logger
 from shared.bus import EventBus
+from shared.timefmt import fmt_local
 
 log = get_logger(__name__)
 
@@ -45,8 +46,8 @@ def candle_status(last_candle: Optional[datetime], now: datetime, gran_minutes: 
     lag = now - (last_candle + bar)  # tiempo desde que cerró la última vela guardada
     if lag > bar * 1.5:
         return {"status": "unhealthy",
-                "detail": f"última vela {last_candle:%Y-%m-%d %H:%M} UTC, sin velas nuevas hace {int(lag.total_seconds() // 60)} min"}
-    return {"status": "healthy", "detail": f"última vela {last_candle:%Y-%m-%d %H:%M} UTC"}
+                "detail": f"la última vela cerró el {fmt_local(last_candle + bar)}; sin velas nuevas hace {int(lag.total_seconds() // 60)} min"}
+    return {"status": "healthy", "detail": f"última vela cerró el {fmt_local(last_candle + bar)}"}
 
 
 def strategy_status(state: Optional[Dict[str, Any]], last_candle: Optional[datetime], now: datetime,
@@ -58,11 +59,11 @@ def strategy_status(state: Optional[Dict[str, Any]], last_candle: Optional[datet
     closed_at = last_candle + timedelta(minutes=gran_minutes)
     if evaluated < last_candle and now - closed_at > timedelta(minutes=grace_minutes):
         return {"status": "unhealthy",
-                "detail": f"no evaluó la vela {last_candle:%Y-%m-%d %H:%M} UTC (última evaluada {evaluated:%H:%M})"}
+                "detail": f"no analizó la vela que cerró el {fmt_local(closed_at)} (la última analizada es la que abrió el {fmt_local(evaluated)})"}
     errors = [name for name, s in (state.get("estrategias") or {}).items() if s.get("error")]
     if errors:
         return {"status": "unhealthy", "detail": f"error al evaluar {', '.join(errors)}"}
-    return {"status": "healthy", "detail": f"última vela evaluada {evaluated:%Y-%m-%d %H:%M} UTC"}
+    return {"status": "healthy", "detail": f"analizó la vela que cerró el {fmt_local(evaluated + timedelta(minutes=gran_minutes))}"}
 
 
 def combine_status(per_pair: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:

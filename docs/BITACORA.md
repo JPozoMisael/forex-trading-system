@@ -5,6 +5,16 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-28 (oro, más pares y reportes en hora de Ecuador) · DESKTOP-RC7UDV1
+
+- **Primera operación del modelo en Dokploy:** VENTA de EUR/USD a 1.11265, abierta a las 5:00 a. m. de Ecuador (10:00 UTC), en simulación.
+- **Reportes en hora local** (`shared/timefmt.py`, `REPORT_UTC_OFFSET_HOURS=-5`, `REPORT_TIMEZONE_NAME=Ecuador`). El usuario leyó "Abierta (UTC) 10:00" como una hora a la que había que esperar. Ahora todo sale en hora de Ecuador con a. m./p. m.:
+  - cada posición explicada en palabras (cuánto se pierde en el SL, cuánto se gana en el TP, cómo va ahora y que no hay que hacer nada);
+  - el modelo explicado ("probabilidad de que una COMPRA llegue a su objetivo: 20 %");
+  - las sesiones en hora local;
+  - `REPORT_TIMES=01:30,08:00` en hora local (reemplaza a `REPORT_TIMES_UTC`).
+- **Oro y más pares:** lote de 100 onzas y costes por instrumento en `shared/fx.py`. Protocolo pre-registrado en `config.yaml` (`multi_instrumento`, commit `9daa499`) y corrido con `backtesting/src/run_instrumentos.py`. El strategy-engine carga un modelo por cada instrumento de `produccion.activos`.
+
 ## 2026-10-27 (arreglo: reporte repetido cada minuto) · DESKTOP-RC7UDV1
 
 - **Fallo:** el turno enviado se guardaba en Redis como string suelto (`set_json` no lo codifica en JSON) y `get_json` no podía leerlo, así que el reporte salía en cada chequeo (cada minuto). Ahora se guarda `{"turno": ...}`. Un test simula 8 h de chequeos con fakeredis y exige exactamente dos envíos.

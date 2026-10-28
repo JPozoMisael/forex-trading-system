@@ -86,17 +86,17 @@ def test_alerts_only_after_three_failed_checks_and_once_on_recovery():
 
 # ------------------------------------------------------------- reporte
 
-TIMES = ["06:30", "13:00"]
+TIMES = ["01:30", "08:00"]  # hora de Ecuador (UTC-5) = 06:30 y 13:00 UTC
 
 
 def test_report_slots_before_london_and_new_york():
     at = lambda h, m: datetime(2026, 10, 27, h, m, tzinfo=UTC)
     assert due_slot(at(6, 29), None, TIMES) is None
-    assert due_slot(at(6, 30), None, TIMES) == "2026-10-27 06:30"
-    assert due_slot(at(6, 31), "2026-10-27 06:30", TIMES) is None          # ya enviado
-    assert due_slot(at(8, 0), None, TIMES) == "2026-10-27 06:30"           # recupera dentro de 2 h
+    assert due_slot(at(6, 30), None, TIMES) == "2026-10-27 01:30"
+    assert due_slot(at(6, 31), "2026-10-27 01:30", TIMES) is None          # ya enviado
+    assert due_slot(at(8, 0), None, TIMES) == "2026-10-27 01:30"           # recupera dentro de 2 h
     assert due_slot(at(9, 0), None, TIMES) is None                         # demasiado tarde para Londres
-    assert due_slot(at(13, 5), "2026-10-27 06:30", TIMES) == "2026-10-27 13:00"
+    assert due_slot(at(13, 5), "2026-10-27 01:30", TIMES) == "2026-10-27 08:00"
     assert due_slot(datetime(2026, 10, 31, 6, 30, tzinfo=UTC), None, TIMES) is None  # sábado
     assert upcoming_sessions(at(6, 30)) == ["Londres"]
     assert upcoming_sessions(at(11, 0)) == ["Nueva York"]
@@ -176,7 +176,8 @@ def test_report_and_chart_are_built(with_trades):
     data = _report_data(with_trades)
     subject, html, text = build_report(data)
     assert "sistema OK" in subject and "cid:grafico_EUR_USD" in html
-    assert "P(compra gana) 41.0 %" in text
+    assert "Probabilidad de que una COMPRA llegue a su objetivo: 41 %" in text and "Sin señal" in text
+    assert "UTC" not in text  # todo en hora local
     if with_trades:
         assert "1 posición(es) abierta(s)" in subject and "+$120.00" in text
     else:
@@ -204,7 +205,26 @@ def test_report_with_several_instruments():
                                                                       "umbral": 0.5, "senal": "buy"}}},
                       account=eur.account, initial_balance=10000)
     subject, html, text = build_report([eur, gold])
-    assert "XAU_USD SEÑAL BUY" in subject and "1 posición(es)" in subject
+    assert "Oro (XAU/USD) SEÑAL COMPRA" in subject and "1 posición(es)" in subject
     assert "cid:grafico_EUR_USD" in html and "cid:grafico_XAU_USD" in html
     assert f"precio {gold_candles['close'].iloc[-1]:.2f}" in text  # oro con 2 decimales
     assert plot_chart(gold)[:4] == b"\x89PNG"
+
+
+def test_local_times_for_ecuador():
+    from shared.timefmt import fmt_hora, fmt_local
+
+    assert fmt_hora(datetime(2026, 10, 28, 10, 0, tzinfo=UTC)) == "5:00 a. m."   # la confusión de "10:00"
+    assert fmt_hora(datetime(2026, 10, 28, 13, 0, tzinfo=UTC)) == "8:00 a. m."
+    assert fmt_hora(datetime(2026, 10, 28, 21, 30, tzinfo=UTC)) == "4:30 p. m."
+    assert fmt_local("2026-10-28T03:00:00+00:00") == "mar 27/10 10:00 p. m."     # cambia el día
+
+
+def test_open_position_explained_in_words():
+    data = _report_data(with_trades=True)
+    c = float(data.candles["close"].iloc[-1])
+    data.open_orders["units"] = 25_000  # SL a 40 pips -> ~$100; TP a 60 pips -> ~$150
+    _, html, text = build_report(data)
+    assert "COMPRA abierta el" in text and "perdiendo ~$100" in text and "ganando ~$150" in text
+    assert "No tienes que hacer nada" in text and "Ahora va +$0.00" in text
+    assert "hora de Ecuador" in html

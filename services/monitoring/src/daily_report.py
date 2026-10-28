@@ -1,6 +1,6 @@
 """
-Reportes por email antes de cada sesión (lunes a viernes, REPORT_TIMES_UTC;
-por defecto 06:30 y 13:00 UTC = 1:30 y 8:00 en Ecuador).
+Reportes por email antes de cada sesión (lunes a viernes, REPORT_TIMES en hora local;
+por defecto 01:30 y 08:00 en Ecuador). Todas las horas se muestran en hora local.
 
 Contenido: estado del sistema, qué ve el modelo en la última vela, cuenta
 simulada, operaciones de las últimas 24 h, acumulado desde el inicio y un
@@ -30,8 +30,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from shared.config import settings
+from shared.config import GRANULARITY_MINUTES, settings
 from shared.logger import get_logger
+from shared.timefmt import fmt_fecha, fmt_hora, fmt_local, local_tz, to_local, zona
 
 log = get_logger(__name__)
 
@@ -73,21 +74,29 @@ class ReportData:
 CATCH_UP = timedelta(hours=2)  # si el servicio estuvo caído a la hora, se envía si no pasaron más de 2 h
 
 
-def due_slot(now: datetime, last_sent: Optional[str], times_utc: List[str]) -> Optional[str]:
+def due_slot(now: datetime, last_sent: Optional[str], times_local: List[str]) -> Optional[str]:
     """
-    Turno de reporte pendiente ("2026-10-27 06:30") o None. Lunes a viernes,
-    una vez por horario. Un turno vencido hace más de 2 h ya no se envía: el
-    reporte de Londres no sirve a mediodía.
+    Turno de reporte pendiente ("2026-10-27 01:30", hora local) o None. Lunes a
+    viernes (hora local), una vez por horario. Un turno vencido hace más de 2 h
+    ya no se envía: el reporte de Londres no sirve a mediodía.
     """
-    if now.weekday() >= 5:
+    local = to_local(now)
+    if local.weekday() >= 5:
         return None
-    for hhmm in sorted(times_utc, reverse=True):
+    for hhmm in sorted(times_local, reverse=True):
         h, m = (int(x) for x in hhmm.split(":"))
-        start = now.replace(hour=h, minute=m, second=0, microsecond=0)
-        if start <= now < start + CATCH_UP:
-            slot = f"{now.date().isoformat()} {h:02d}:{m:02d}"
+        start = local.replace(hour=h, minute=m, second=0, microsecond=0)
+        if start <= local < start + CATCH_UP:
+            slot = f"{local.date().isoformat()} {h:02d}:{m:02d}"
             return slot if slot != last_sent else None
     return None
+
+
+def sessions_local_text() -> str:
+    """'Londres abre 2:00 a. m. y cierra 11:00 a. m.; Nueva York ...' en hora local."""
+    base = datetime(2026, 1, 5, tzinfo=timezone.utc)  # un lunes cualquiera: solo importa la hora
+    return "; ".join(f"{name} abre {fmt_hora(base.replace(hour=a))} y cierra {fmt_hora(base.replace(hour=b))}"
+                     for name, (a, b) in SESSIONS.items())
 
 
 def upcoming_sessions(now: datetime) -> List[str]:
@@ -216,10 +225,12 @@ def plot_chart(data: ReportData) -> bytes:
     ax_s.set_yticklabels(list(SESSIONS), fontsize=8, color=TEXT_SECONDARY)
 
     # Ejes
-    ticks = [i for i, ts in zip(x, df.index) if ts.hour == 0]
+    # Días marcados a la medianoche LOCAL (hora del usuario)
+    local_index = df.index.tz_convert(local_tz())
+    ticks = [i for i, ts in zip(x, local_index) if ts.hour == 0]
     ax_s.set_xticks(ticks)
     dias = ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
-    ax_s.set_xticklabels([f"{dias[df.index[i].weekday()]} {df.index[i].day}" for i in ticks],
+    ax_s.set_xticklabels([f"{dias[local_index[i].weekday()]} {local_index[i].day}" for i in ticks],
                          fontsize=8, color=TEXT_SECONDARY)
     ax.set_xlim(-1, len(df))
     # El eje incluye SL y TP de la posición abierta aunque estén fuera del rango de las velas
@@ -240,14 +251,15 @@ def plot_chart(data: ReportData) -> bytes:
     ax_s.tick_params(axis="y", length=0)
 
     close = float(df["close"].iloc[-1])
-    ax.set_title(f"{data.pair} {data.granularity} · últimos {len(df)} periodos · cierre {close:.{dg}f} · "
+    ax.set_title(f"{display_name(data.pair)} {data.granularity} · últimos {len(df)} periodos · cierre {close:.{dg}f} · "
                  f"Fibonacci del movimiento {fib['tendencia']}", loc="left", fontsize=11, color=TEXT_PRIMARY, pad=10)
     legend = ax.legend(loc="upper left", frameon=False, fontsize=8)
     for t in legend.get_texts():
         t.set_color(TEXT_PRIMARY)
-    fig.text(0.01, 0.005, "Hora UTC (Ecuador = UTC-5). Fibonacci, EMAs y sesiones son contexto visual: el modelo no los usa. "
-             "▲/▼ entrada de una operación cerrada, X salida.", fontsize=7.5, color=TEXT_SECONDARY)
-    fig.subplots_adjust(left=0.07, right=0.84, top=0.93, bottom=0.08)
+    fig.text(0.01, 0.005, f"Días y horas en {zona()}. {sessions_local_text()}\n"
+             "Fibonacci, EMAs y sesiones son contexto visual: el modelo no los usa. ▲/▼ entrada de una operación "
+             "cerrada, X salida.", fontsize=7.5, color=TEXT_SECONDARY)
+    fig.subplots_adjust(left=0.08, right=0.84, top=0.93, bottom=0.11)
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", facecolor=SURFACE)
@@ -261,24 +273,59 @@ def _fmt_money(v: float) -> str:
     return f"{'+' if v >= 0 else '-'}${abs(v):,.2f}"
 
 
-def _model_view(state: Optional[Dict[str, Any]]) -> Tuple[str, str]:
-    """(resumen corto, detalle) de lo que vio el modelo en la última vela evaluada."""
+_SIDE = {"buy": "COMPRA", "sell": "VENTA"}
+
+
+def _model_view(state: Optional[Dict[str, Any]], gran_minutes: int = 60) -> Tuple[str, str]:
+    """(resumen corto, explicación en palabras) de lo que vio el modelo en la última vela, en hora local."""
     if not state:
-        return "sin evaluaciones todavía", "El strategy-engine aún no ha evaluado ninguna vela."
-    vela = str(state.get("vela", "?"))[:16].replace("T", " ")
-    parts = []
+        return "sin evaluaciones todavía", "El modelo todavía no ha analizado ninguna vela."
+    start = to_local(state["vela"])
+    end = start + timedelta(minutes=gran_minutes)
+    text = f"Última vela analizada: de {fmt_hora(start)} a {fmt_hora(end)} del {fmt_fecha(start)}."
     short = "sin señal"
-    for name, s in (state.get("estrategias") or {}).items():
+    for s in (state.get("estrategias") or {}).values():
         if s.get("error"):
-            parts.append(f"{name}: ERROR al evaluar")
-            continue
+            return "ERROR", text + " El modelo tuvo un ERROR al analizarla (revisar logs)."
         if "p_long" in s:
-            parts.append(f"{name}: P(compra gana) {s['p_long'] * 100:.1f} % · P(venta gana) {s['p_short'] * 100:.1f} % "
-                         f"· umbral {s['umbral'] * 100:.0f} %")
+            umbral = s["umbral"] * 100
+            text += (f" Probabilidad de que una COMPRA llegue a su objetivo: {s['p_long'] * 100:.0f} %; "
+                     f"una VENTA: {s['p_short'] * 100:.0f} %. El modelo solo opera si alguna llega al {umbral:.0f} %.")
         if s.get("senal"):
-            short = f"SEÑAL {str(s['senal']).upper()}"
-            parts.append(f"{name}: señal {str(s['senal']).upper()}")
-    return short, f"Vela {vela} UTC. " + ("; ".join(parts) if parts else "sin datos de probabilidad")
+            side = _SIDE.get(str(s["senal"]).lower(), str(s["senal"]).upper())
+            short = f"SEÑAL {side}"
+            text += f" → Señal de {side}."
+        elif "p_long" in s:
+            text += " → Sin señal: ninguna llega, así que no hace nada."
+    return short, text
+
+
+def _position_text(o, pair: str, price: float, digits: int) -> str:
+    """Una posición abierta explicada en palabras: qué pasa si toca el SL o el TP y cómo va ahora."""
+    from shared.fx import quote_to_usd_rate
+
+    side = _SIDE.get(str(o["direction"]).lower(), str(o["direction"]).upper())
+    entry, sl, tp = (float(o[k]) if o.get(k) is not None and not pd.isna(o.get(k)) else None
+                     for k in ("entry_price", "stop_loss", "take_profit"))
+    text = f"{side} abierta el {fmt_local(o.get('opened_at'))} a {entry:.{digits}f}."
+    units = o.get("units")
+    rate = quote_to_usd_rate(pair, price)
+    if entry is None or sl is None or tp is None or units is None or pd.isna(units) or rate is None:
+        return text
+    buy = str(o["direction"]).lower() == "buy"
+    loss = abs(entry - sl) * float(units) * rate
+    gain = abs(tp - entry) * float(units) * rate
+    now_pnl = ((price - entry) if buy else (entry - price)) * float(units) * rate
+    hacia_sl, hacia_tp = ("baja", "sube") if buy else ("sube", "baja")
+    return (f"{text} Si el precio {hacia_sl} a {sl:.{digits}f} (Stop Loss) se cierra perdiendo ~${loss:,.0f}; "
+            f"si {hacia_tp} a {tp:.{digits}f} (Take Profit) se cierra ganando ~${gain:,.0f}. "
+            f"Ahora va {_fmt_money(now_pnl)}. No tienes que hacer nada: el sistema la cierra solo.")
+
+
+def display_name(pair: str) -> str:
+    """'EUR/USD', 'Oro (XAU/USD)'."""
+    p = pair.upper().replace("_", "/")
+    return f"Oro ({p})" if p.startswith("XAU") else p
 
 
 def _digits(pair: str) -> int:
@@ -290,24 +337,34 @@ def _digits(pair: str) -> int:
 def _instrument_section(data: ReportData) -> Dict[str, Any]:
     """Lo de un instrumento: qué ve el modelo, posiciones y operaciones de 24 h."""
     d = _digits(data.pair)
-    model_short, model_detail = _model_view(data.strategy_state)
+    gran_minutes = GRANULARITY_MINUTES.get(data.granularity.upper(), 60)
+    model_short, model_detail = _model_view(data.strategy_state, gran_minutes)
     closed = data.closed_orders
     since = data.now - timedelta(hours=24)
     last24 = closed[pd.to_datetime(closed["closed_at"], utc=True) >= since] if not closed.empty else closed
+    price = float(data.candles["close"].iloc[-1])
 
     def px(v):
         return f"{float(v):.{d}f}" if v is not None and not pd.isna(v) else "-"
 
-    open_rows = [[str(o["direction"]).upper(), px(o.get("entry_price")), px(o.get("stop_loss")),
-                  px(o.get("take_profit")), str(o.get("opened_at"))[:16]] for _, o in data.open_orders.iterrows()]
+    open_rows = [[_SIDE.get(str(o["direction"]).lower(), str(o["direction"]).upper()), px(o.get("entry_price")),
+                  px(o.get("stop_loss")), px(o.get("take_profit")), fmt_local(o.get("opened_at"))]
+                 for _, o in data.open_orders.iterrows()]
+    open_texts = [_position_text(o, data.pair, price, d) for _, o in data.open_orders.iterrows()]
+    reasons = {"tp": "Take Profit (ganancia)", "sl": "Stop Loss (pérdida)"}
     closed_rows = []
     for _, o in last24.iterrows():
         r = o.get("r_multiple")
-        closed_rows.append([str(o["direction"]).upper(), px(o.get("entry_price")), px(o.get("exit_price")),
-                            str(o.get("exit_reason") or "").upper(), _fmt_money(float(o.get("pnl") or 0)),
+        closed_rows.append([_SIDE.get(str(o["direction"]).lower(), str(o["direction"]).upper()),
+                            px(o.get("entry_price")), px(o.get("exit_price")), fmt_local(o.get("closed_at")),
+                            reasons.get(str(o.get("exit_reason") or "").lower(), str(o.get("exit_reason") or "")),
+                            _fmt_money(float(o.get("pnl") or 0)),
                             f"{float(r):+.2f} R" if r is not None and not pd.isna(r) else "-"])
-    return {"pair": data.pair, "short": model_short, "detail": model_detail,
-            "close": px(data.candles["close"].iloc[-1]), "open_rows": open_rows, "closed_rows": closed_rows}
+    if model_short.startswith("SEÑAL") and open_rows:
+        model_detail += " Como ya hay una posición abierta en este instrumento, no se abre otra."
+    return {"pair": data.pair, "name": display_name(data.pair), "short": model_short, "detail": model_detail,
+            "close": px(price),
+            "open_rows": open_rows, "open_texts": open_texts, "closed_rows": closed_rows}
 
 
 def build_report(datas) -> Tuple[str, str, str]:
@@ -328,9 +385,12 @@ def build_report(datas) -> Tuple[str, str, str]:
 
     upcoming = upcoming_sessions(first.now)
     title = f"Sesión de {' y '.join(upcoming)}" if upcoming else "Reporte"
-    signals = [f"{s['pair']} {s['short']}" for s in sections if s["short"].startswith("SEÑAL")]
-    subject = (f"[{title}] {first.now:%d/%m} · {'✅ sistema OK' if ok else '⚠️ revisar sistema'} · "
+    signals = [f"{s['name']} {s['short']}" for s in sections if s["short"].startswith("SEÑAL")]
+    subject = (f"[{title}] {fmt_local(first.now)} · {'✅ sistema OK' if ok else '⚠️ revisar sistema'} · "
                f"{', '.join(signals) if signals else 'sin señales'} · {n_open} posición(es) abierta(s)")
+    when = f"Reporte del {fmt_local(first.now)} ({zona()}). Todas las horas de este correo están en {zona()}."
+    sessions_now = (f"Sesiones abiertas ahora: {', '.join(sessions) or 'ninguna (sesión de Asia)'}. "
+                    f"{sessions_local_text()} ({zona()}).")
 
     names = {"postgres": "Base de datos", "redis": "Redis", "broker": "Cuenta / execution-engine",
              "datos": "Velas (data-collector)", "estrategia": "Modelo (strategy-engine)"}
@@ -354,12 +414,12 @@ def build_report(datas) -> Tuple[str, str, str]:
            f"{BACKTEST_REF['expectativa_r']:+.2f} R por operación, profit factor {BACKTEST_REF['profit_factor']}.")
 
     # Texto plano
-    lines = [subject, "", f"SISTEMA: {'todo OK' if ok else 'HAY COMPONENTES CON FALLO'}"]
+    lines = [subject, "", when, "", f"SISTEMA: {'todo OK' if ok else 'HAY COMPONENTES CON FALLO'}"]
     lines += [f"  {icon} {name}: {detail}" for name, icon, detail in health_rows]
-    lines += ["", f"Sesiones activas ahora: {', '.join(sessions) or 'ninguna (Asia)'}."]
+    lines += ["", sessions_now]
     for s in sections:
-        lines += ["", f"== {s['pair']} · precio {s['close']} ==", f"MODELO: {s['detail']}"]
-        lines += [f"  Abierta: {' | '.join(r)}" for r in s["open_rows"]] or ["  Sin posiciones abiertas."]
+        lines += ["", f"== {s['name']} · precio {s['close']} ==", f"MODELO: {s['detail']}"]
+        lines += [f"  POSICIÓN: {t}" for t in s["open_texts"]] or ["  Sin posiciones abiertas."]
         lines += [f"  Cerrada (24 h): {' | '.join(r)}" for r in s["closed_rows"]]
     lines += ["", f"CUENTA SIMULADA: {account_line}", "", "ACUMULADO (todos los instrumentos):"]
     lines += [f"  {k}: {v}" for k, v in stats_rows] + [f"  {ref}"]
@@ -378,21 +438,22 @@ def build_report(datas) -> Tuple[str, str, str]:
     p = "style='font-size:13px;margin:0 0 8px'"
     parts = []
     for s in sections:
-        open_html = (table(["Dirección", "Entrada", "SL", "TP", "Abierta (UTC)"], s["open_rows"])
+        open_html = ("".join(f"<p {p}><b>Posición abierta:</b> {t}</p>" for t in s["open_texts"])
+                     + table(["Dirección", "Entrada", "Stop Loss", "Take Profit", "Abierta"], s["open_rows"])
                      if s["open_rows"] else f"<p {p}>Sin posiciones abiertas.</p>")
         closed_html = (f"<p {p}><b>Cerradas en las últimas 24 h</b></p>"
-                       + table(["Dirección", "Entrada", "Salida", "Motivo", "Resultado", "R"], s["closed_rows"])
+                       + table(["Dirección", "Entrada", "Salida", "Cerrada", "Motivo", "Resultado", "R"], s["closed_rows"])
                        if s["closed_rows"] else "")
         parts.append(f"""
-<h2 {h2}>{s['pair']} · precio {s['close']}</h2>
+<h2 {h2}>{s['name']} · precio {s['close']}</h2>
 <p {p}>{s['detail']}</p>
-<img src="cid:grafico_{s['pair']}" alt="Gráfico de {s['pair']}" style="width:100%;max-width:900px">
+<img src="cid:grafico_{s['pair']}" alt="Gráfico de {s['name']}" style="width:100%;max-width:900px">
 {open_html}
 {closed_html}""")
 
     html = f"""<html><body style="font-family:Arial,Helvetica,sans-serif;color:{TEXT_PRIMARY};background:{SURFACE};max-width:900px">
-<h1 style="font-size:19px;margin:0 0 4px">{title} · {', '.join(d.pair for d in datas)} · {first.granularity}</h1>
-<div style="color:{TEXT_SECONDARY};font-size:13px">{first.now:%d/%m/%Y %H:%M} UTC ({(first.now - timedelta(hours=5)):%H:%M} en Ecuador) · modo simulación (DRY_RUN) · sesiones activas: {', '.join(sessions) or 'ninguna (Asia)'}</div>
+<h1 style="font-size:19px;margin:0 0 4px">{title} · {', '.join(display_name(d.pair) for d in datas)} · velas de {first.granularity}</h1>
+<div style="color:{TEXT_SECONDARY};font-size:13px">{when} Modo simulación (DRY_RUN): no se arriesga dinero real.<br>{sessions_now}</div>
 
 <h2 {h2}>{'✅ Sistema funcionando' if ok else '⚠️ Hay componentes con fallo'}</h2>
 {table(["Componente", "", "Detalle"], health_rows)}

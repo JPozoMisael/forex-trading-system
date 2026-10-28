@@ -66,12 +66,12 @@ def _maybe_send_report(bus: EventBus, checker: HealthChecker, notifier, email_no
     now = now or datetime.now(timezone.utc)
     # Como objeto JSON: un string suelto no se puede leer con get_json (por eso se repetía el envío)
     last = (bus.get_json(settings.key_daily_report_sent) or {})
-    slot = due_slot(now, last.get("turno") if isinstance(last, dict) else None, settings.report_times_utc)
+    slot = due_slot(now, last.get("turno") if isinstance(last, dict) else None, settings.report_times)
     if slot is None:
         return None
     # Se marca antes de enviar: si el envío falla no se reintenta cada minuto
     bus.set_json(settings.key_daily_report_sent, {"turno": slot})
-    log.info(f"📧 Enviando reporte del turno {slot} UTC...")
+    log.info(f"📧 Enviando reporte del turno {slot} (hora local)...")
     (send or send_daily_report)(email_notifier, notifier, bus, checker, now)
     return slot
 

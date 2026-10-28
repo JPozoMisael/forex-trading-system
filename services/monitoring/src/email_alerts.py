@@ -4,6 +4,7 @@ Espejo de telegram_alerts.py: mismos eventos, mismo criterio de qué informar,
 pero como email en texto plano para quien prefiera revisar su bandeja de entrada.
 """
 import smtplib
+from datetime import datetime, timezone
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -11,6 +12,7 @@ from typing import Optional, Dict, Any
 
 from shared.config import settings
 from shared.logger import get_logger
+from shared.timefmt import fmt_local, zona
 
 log = get_logger(__name__)
 
@@ -36,6 +38,8 @@ class EmailNotifier:
 
     def send_message(self, subject: str, body: str) -> bool:
         """Envía un correo de texto plano vía SMTP."""
+        # Hora local del usuario al pie de cada aviso (el sistema trabaja en UTC)
+        body = body + f"\n\nEnviado el {fmt_local(datetime.now(timezone.utc))} ({zona()})."
         if not self.is_configured:
             log.info(f"\n[EMAIL SIMULADO] {subject}\n{body}\n" + "-" * 40)
             return True
