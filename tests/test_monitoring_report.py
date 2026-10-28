@@ -228,3 +228,14 @@ def test_open_position_explained_in_words():
     assert "COMPRA abierta el" in text and "perdiendo ~$100" in text and "ganando ~$150" in text
     assert "No tienes que hacer nada" in text and "Ahora va +$0.00" in text
     assert "hora de Ecuador" in html
+
+
+def test_repeated_signal_with_open_position_is_not_emailed():
+    m = _load_monitoring_main()
+    s = m.settings
+    open_pos = lambda pair, when: pair == "EUR_USD"
+    assert m.is_redundant(s.channel_risk_alerts, {"reason": "Ya existe una posición activa para el par EUR_USD"}, open_pos)
+    assert not m.is_redundant(s.channel_risk_alerts, {"reason": "Spread demasiado alto"}, open_pos)
+    assert m.is_redundant(s.channel_signals_new, {"pair": "EUR_USD", "timestamp": "2026-10-28T14:00:00+00:00"}, open_pos)
+    assert not m.is_redundant(s.channel_signals_new, {"pair": "XAU_USD"}, open_pos)   # señal nueva: se avisa
+    assert not m.is_redundant(s.channel_orders_closed, {"pair": "EUR_USD"}, open_pos)  # cierres siempre

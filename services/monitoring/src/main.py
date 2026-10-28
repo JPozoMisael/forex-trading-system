@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
@@ -58,6 +58,40 @@ class AlertState:
             self.alerted = True
             return "fallo"
         return None
+
+
+DUPLICATE_POSITION_REASON = "Ya existe una posición activa"
+
+
+def _position_open_before(pair: str, when: Any) -> bool:
+    """¿Hay una posición de `pair` ya ejecutada (filled) antes de `when`? Ante error de BD: False (se avisa)."""
+    import psycopg2
+
+    try:
+        conn = psycopg2.connect(settings.postgres_dsn, connect_timeout=3)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM orders WHERE pair = %s AND status = 'filled' AND opened_at < %s LIMIT 1;",
+                            (pair, when))
+                return cur.fetchone() is not None
+        finally:
+            conn.close()
+    except Exception as e:
+        log.warning(f"No se pudo consultar posiciones abiertas de {pair}: {e}")
+        return False
+
+
+def is_redundant(channel: str, data: dict, position_open_before) -> bool:
+    """
+    Avisos que no aportan nada: con una posición ya abierta en el par, el
+    modelo puede repetir la señal cada vela y el risk-manager la rechaza por
+    duplicada. Se registran en el log pero no se envían por email/Telegram.
+    """
+    if channel == settings.channel_risk_alerts:
+        return str(data.get("reason", "")).startswith(DUPLICATE_POSITION_REASON)
+    if channel == settings.channel_signals_new and data.get("pair"):
+        return position_open_before(data["pair"], data.get("timestamp") or datetime.now(timezone.utc))
+    return False
 
 
 def _maybe_send_report(bus: EventBus, checker: HealthChecker, notifier, email_notifier,
@@ -151,6 +185,10 @@ def main():
             elif channel == settings.channel_risk_alerts:
                 method = "send_risk_alert"
             else:
+                continue
+
+            if is_redundant(channel, data, _position_open_before):
+                log.info(f"Aviso no enviado (repetido, ya hay posición abierta en {data.get('pair')}): {channel}")
                 continue
 
             # Cada canal de notificación se despacha en su propio try/except:
