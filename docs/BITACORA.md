@@ -5,6 +5,27 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-29 (prueba de swing H4 / diario) · DESKTOP-RC7UDV1
+
+- **Swap en el backtester:** `financiamiento_anual_pct`, 0 por defecto, así que las pruebas anteriores no cambian.
+- **Protocolo `swing` pre-registrado** en `config.yaml` (commit `a557af9`) y corrido una vez con `run_instrumentos.py --seccion swing`:
+
+  | | H4 | D |
+  |---|---|---|
+  | EUR_USD | −23.7 % | −13.8 % |
+  | GBP_USD | −7.9 % | −11.5 % |
+  | USD_JPY | −20.2 % | −8.1 % |
+  | AUD_USD | −35.2 % | −2.7 % |
+  | XAU_USD | −0.4 % (+0.001 R) | −10.0 % |
+
+  - **Ninguna cumple la regla.** El modelo v1 solo tiene algo en H1; queda `CANDLE_GRANULARITY=H1` sin cambios.
+  - Llevamos 25 combinaciones probadas: para dinero real hace falta p < 0.002.
+- `docs/DIAGNOSTICO.md` actualizado (P2 y P5 resueltos, nuevo P11 sobre el deslizamiento en noticias).
+- **Siguiente paso:**
+  - `git push` y Redeploy en Dokploy (gráficos);
+  - calendario económico en el reporte (pendiente de confirmar);
+  - dejar correr el paper trading 2–3 meses y compararlo con `produccion.referencia_backtest`.
+
 ## 2026-10-28 (gráficos estilo TradingView) · DESKTOP-RC7UDV1
 
 - La primera operación (VENTA EUR/USD 1.11265) cerró en el Stop Loss: −$99.45 = −1 R, lo previsto.

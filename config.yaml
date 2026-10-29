@@ -126,6 +126,8 @@ multi_instrumento:
 #     (p < 0.002).
 #   - Si gana alguna, activarla en vivo requiere un cambio aparte (hoy el sistema
 #     opera una sola temporalidad, H1); se decide después de ver el resultado.
+# Resultado del 2026-10-29 (reports/20261029_1419_swing.md): NINGUNA cumple. 9 de 10
+# pierden; el oro en H4 queda en -0.4 % (+0.001 R). El sistema sigue solo en H1.
 swing:
   instrumentos: [EUR_USD, GBP_USD, USD_JPY, AUD_USD, XAU_USD]
   temporalidades: [H4, D]
