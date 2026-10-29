@@ -408,3 +408,19 @@ def test_report_still_goes_out_when_calendar_fails():
     _, _, text = build_report(data, events)
     assert "No se pudo leer el calendario" in text
     assert "Sin noticias de impacto alto" in build_report(data)[2]
+
+
+def test_sessions_follow_daylight_saving_of_each_city():
+    from daily_report import sessions_local_text
+
+    # Julio: Londres y Nueva York en horario de verano
+    assert sessions_local_text(datetime(2026, 7, 7, 12, tzinfo=UTC)).startswith(
+        "Londres abre 2:00 a. m. y cierra 11:00 a. m.; Nueva York abre 7:00 a. m.")
+    # 29 oct: Londres ya cambió (25 oct), Nueva York todavía no (1 nov)
+    assert sessions_local_text(datetime(2026, 10, 29, 12, tzinfo=UTC)).startswith(
+        "Londres abre 3:00 a. m. y cierra 12:00 p. m.; Nueva York abre 7:00 a. m.")
+    # Noviembre: los dos en horario de invierno
+    nov = datetime(2026, 11, 3, 13, 5, tzinfo=UTC)  # mar 8:05 a. m. en Ecuador
+    assert "Nueva York abre 8:00 a. m. y cierra 5:00 p. m." in sessions_local_text(nov)
+    assert active_sessions(nov) == ["Londres", "Nueva York"] and upcoming_sessions(nov) == ["Nueva York"]
+    assert active_sessions(datetime(2026, 11, 3, 12, 30, tzinfo=UTC)) == ["Londres"]  # NY aún cerrada

@@ -26,7 +26,11 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
   - en hora de Ecuador, con nombre en español, previsión, dato anterior y a qué instrumento afecta;
   - la primera de las próximas 12 h va en el asunto.
   - Fuente: JSON público de ForexFactory (`ECON_CALENDAR_URL`, `ENABLE_ECON_CALENDAR`). Si falla, el reporte sale igual con un aviso. Solo informativo: el modelo no lo usa.
-- 141 tests pasan.
+- **Sesiones con horario de verano:**
+  - Londres y Nueva York se calculan de 8:00 a 17:00 en su ciudad (`zoneinfo`).
+  - Antes estaban fijas en UTC de verano y el reporte decía "Londres abre 2:00 a. m." cuando desde el 25 de octubre abre a las 3:00. Desde el 1 de noviembre Nueva York abre a las 8:00 de Ecuador.
+- Nuevos pendientes en DIAGNOSTICO: P12 (swap en la simulación), P13 (volumen de modelos), P14 (MT5 en Linux para dinero real), P15 (reentrenamiento).
+- 142 tests pasan.
 - **Siguiente paso:**
   - Redeploy en Dokploy (gráficos y calendario);
   - dejar correr el paper trading 2–3 meses y compararlo con `produccion.referencia_backtest`.

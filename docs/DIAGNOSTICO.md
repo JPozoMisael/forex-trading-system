@@ -4,7 +4,7 @@
 > `python scripts/diagnostico.py --guardar` y queda en [diagnosticos/](diagnosticos/).
 > Actualizar este archivo cada vez que se cierre o aparezca un pendiente.
 
-**Última revisión:** 2026-10-29 · commit `f4f1ca7` · 135 tests pasan.
+**Última revisión:** 2026-10-29 · 142 tests pasan.
 
 ## 1. Qué funciona hoy
 
@@ -34,6 +34,10 @@
 | P7 | Baja | `requirements-local.txt` incluye `MetaTrader5`, que no se instala fuera de Windows | Separar en `requirements-mt5.txt` |
 | P8 | Baja | No hay CI | Workflow de GitHub Actions con `pytest` |
 | P11 | Media | La simulación cierra exactamente en el SL: no modela el deslizamiento en noticias (Fed, PIB, PCE), así que el paper trading es algo optimista | Calendario económico en el reporte; luego evaluar un filtro de noticias con backtest |
+| P12 | Media | El `SimulatedBroker` no cobra swap a las posiciones que pasan la noche: el paper trading sale un poco optimista (el backtest de H1 tampoco lo cobraba) | Cobrar `financiamiento_anual_pct` también al cerrar en simulación |
+| P13 | Media | En Dokploy `models/` no persiste: cada redeploy reentrena (~5 min sin análisis) y el modelo cambia un poco | Volumen en `/app/models` |
+| P14 | Media | Dinero real con XM exige MT5, que solo corre en Windows; el servidor de Dokploy es Linux | Antes de operar real: VPS Windows con MT5 o un broker con API que acepte Ecuador |
+| P15 | Baja | Sin reentrenamiento programado: el modelo se queda fijo | Reentrenar cada 6 meses (como en la validación walk-forward) y registrar cada versión |
 | P9 | Baja | `fakeredis` está en requirements pero no siempre instalado, así que `test_bus.py` se omite | `pip install -r requirements-local.txt` |
 
 ## 3. Riesgos a vigilar

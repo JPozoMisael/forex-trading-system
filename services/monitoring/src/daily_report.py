@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
@@ -40,8 +41,10 @@ from shared.timefmt import fmt_fecha, fmt_hora, fmt_local, local_tz, to_local, z
 
 log = get_logger(__name__)
 
-# Horario aproximado de cada sesión en UTC (sin ajuste de horario de verano)
-SESSIONS = {"Londres": (7, 16), "Nueva York": (12, 21)}
+# Cada sesión va de 8:00 a 17:00 en su propia ciudad. En UTC (y en hora de Ecuador) cambia
+# con el horario de verano de Londres y Nueva York, que no cambian el mismo día.
+SESSIONS = {"Londres": "Europe/London", "Nueva York": "America/New_York"}
+SESSION_HOURS = (8, 17)
 CHART_BARS = 120  # 5 días de H1
 
 # Referencia de la prueba final (2023-10 a 2026-10, 76 operaciones en 36 meses)
@@ -92,20 +95,38 @@ def due_slot(now: datetime, last_sent: Optional[str], times_local: List[str]) ->
     return None
 
 
-def sessions_local_text() -> str:
-    """'Londres abre 2:00 a. m. y cierra 11:00 a. m.; Nueva York ...' en hora local."""
-    base = datetime(2026, 1, 5, tzinfo=timezone.utc)  # un lunes cualquiera: solo importa la hora
-    return "; ".join(f"{name} abre {fmt_hora(base.replace(hour=a))} y cierra {fmt_hora(base.replace(hour=b))}"
-                     for name, (a, b) in SESSIONS.items())
+def session_bounds(name: str, when: datetime) -> Tuple[datetime, datetime]:
+    """Apertura y cierre (UTC) de la sesión `name` el día de `when` en su ciudad."""
+    tz = ZoneInfo(SESSIONS[name])
+    day = when.astimezone(tz).date()
+    a, b = (datetime(day.year, day.month, day.day, h, tzinfo=tz).astimezone(timezone.utc) for h in SESSION_HOURS)
+    return a, b
+
+
+def in_session(name: str, when) -> bool:
+    """¿La sesión `name` está abierta en `when`? (lunes a viernes, de 8:00 a 17:00 en su ciudad)"""
+    ts = pd.Timestamp(when)
+    local = (ts if ts.tzinfo else ts.tz_localize("UTC")).tz_convert(SESSIONS[name])
+    return local.weekday() < 5 and SESSION_HOURS[0] <= local.hour < SESSION_HOURS[1]
+
+
+def sessions_local_text(now: Optional[datetime] = None) -> str:
+    """'Londres abre 3:00 a. m. y cierra 12:00 p. m.; Nueva York ...' en hora local, con el horario vigente."""
+    now = now or datetime.now(timezone.utc)
+    parts = []
+    for name in SESSIONS:
+        a, b = session_bounds(name, now)
+        parts.append(f"{name} abre {fmt_hora(a)} y cierra {fmt_hora(b)}")
+    return "; ".join(parts)
 
 
 def upcoming_sessions(now: datetime) -> List[str]:
     """Sesiones que abren en las próximas 2 horas o abrieron hace menos de 2 (para titular el reporte)."""
-    return [name for name, (a, _) in SESSIONS.items() if abs(a * 60 - (now.hour * 60 + now.minute)) <= 120]
+    return [name for name in SESSIONS if abs(session_bounds(name, now)[0] - now) <= timedelta(hours=2)]
 
 
 def active_sessions(now: datetime) -> List[str]:
-    return [name for name, (a, b) in SESSIONS.items() if a <= now.hour < b]
+    return [name for name in SESSIONS if in_session(name, now)]
 
 
 def trade_stats(closed: pd.DataFrame, initial_balance: float) -> Dict[str, Any]:
@@ -185,10 +206,9 @@ def plot_chart(data: ReportData) -> bytes:
                        edgecolors=SURFACE, linewidths=1.5, zorder=7)
 
     # Franja de sesiones (Londres arriba, Nueva York abajo)
-    hours = df.index.hour
-    for row, (name, (a, b)) in enumerate(SESSIONS.items()):
+    for row, name in enumerate(SESSIONS):
         y = 1 - row
-        active = [(a <= h < b) for h in hours]
+        active = [in_session(name, ts) for ts in df.index]
         for i, on in zip(x, active):
             if on:
                 ax_s.add_patch(plt.Rectangle((i - 0.5, y - 0.4), 1.0, 0.8, facecolor=GRID, edgecolor="none"))
@@ -229,7 +249,7 @@ def plot_chart(data: ReportData) -> bytes:
     legend = ax.legend(loc="upper left", frameon=False, fontsize=8)
     for t in legend.get_texts():
         t.set_color(TEXT_PRIMARY)
-    fig.text(0.01, 0.005, f"Días y horas en {zona()}. {sessions_local_text()}\n"
+    fig.text(0.01, 0.005, f"Días y horas en {zona()}. {sessions_local_text(data.now)}\n"
              "Fibonacci, EMAs y sesiones son contexto visual: el modelo no los usa. ▲/▼ entrada de una operación "
              "cerrada, X salida.", fontsize=7.5, color=TEXT_SECONDARY)
     fig.subplots_adjust(left=0.08, right=0.84, top=0.93, bottom=0.11)
@@ -399,7 +419,7 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = ()) -> Tuple[st
                f"{', '.join(signals) if signals else 'sin señales'} · {n_open} posición(es) abierta(s){news}")
     when = f"Reporte del {fmt_local(first.now)} ({zona()}). Todas las horas de este correo están en {zona()}."
     sessions_now = (f"Sesiones abiertas ahora: {', '.join(sessions) or 'ninguna (sesión de Asia)'}. "
-                    f"{sessions_local_text()} ({zona()}).")
+                    f"{sessions_local_text(first.now)} ({zona()}).")
 
     names = {"postgres": "Base de datos", "redis": "Redis", "broker": "Cuenta / execution-engine",
              "datos": "Velas (data-collector)", "estrategia": "Modelo (strategy-engine)"}
