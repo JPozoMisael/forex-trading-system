@@ -372,11 +372,12 @@ def timeframe_rows(data: ReportData) -> List[List[str]]:
     return rows
 
 
-def build_report(datas) -> Tuple[str, str, str]:
+def build_report(datas, events: Optional[List[Dict[str, Any]]] = ()) -> Tuple[str, str, str]:
     """
     (asunto, html, texto plano) para uno o varios instrumentos. El HTML
     referencia cada gráfico como cid:grafico_<PAR>. Estado del sistema, cuenta
     y acumulado salen del primero (son comunes a todos).
+    `events`: noticias de econ_calendar.upcoming (None = no se pudo leer el calendario).
     """
     datas = [datas] if isinstance(datas, ReportData) else list(datas)
     first = datas[0]
@@ -392,8 +393,10 @@ def build_report(datas) -> Tuple[str, str, str]:
     upcoming = upcoming_sessions(first.now)
     title = f"Sesión de {' y '.join(upcoming)}" if upcoming else "Reporte"
     signals = [f"{s['name']} {s['short']}" for s in sections if s["short"].startswith("SEÑAL")]
+    soon = [e for e in (events or []) if e["cuando"] <= first.now + timedelta(hours=12)]
+    news = f" · 📰 {soon[0]['titulo']} {fmt_hora(soon[0]['cuando'])}" if soon else ""
     subject = (f"[{title}] {fmt_local(first.now)} · {'✅ sistema OK' if ok else '⚠️ revisar sistema'} · "
-               f"{', '.join(signals) if signals else 'sin señales'} · {n_open} posición(es) abierta(s)")
+               f"{', '.join(signals) if signals else 'sin señales'} · {n_open} posición(es) abierta(s){news}")
     when = f"Reporte del {fmt_local(first.now)} ({zona()}). Todas las horas de este correo están en {zona()}."
     sessions_now = (f"Sesiones abiertas ahora: {', '.join(sessions) or 'ninguna (sesión de Asia)'}. "
                     f"{sessions_local_text()} ({zona()}).")
@@ -419,9 +422,24 @@ def build_report(datas) -> Tuple[str, str, str]:
     ref = ("Cada instrumento muestra lo que dio su prueba con datos de 2023 a 2026; estas semanas sirven para "
            "comprobar si en vivo se parece.")
 
+    # Calendario económico
+    news_rows = [[fmt_local(e["cuando"]), e["moneda"], e["titulo"], e["prevision"], e["anterior"],
+                  ", ".join(display_name(p) for p in e["afecta"])] for e in (events or [])]
+    if events is None:
+        news_note = "No se pudo leer el calendario económico esta vez (revisa el calendario de XM)."
+    elif not events:
+        news_note = "Sin noticias de impacto alto en las próximas 24 horas para los instrumentos que sigues."
+    else:
+        news_note = ("En los minutos alrededor de cada noticia el precio puede saltar varios pips de golpe. El modelo "
+                     "no lee noticias; sus operaciones siguen protegidas por el Stop Loss, pero en dinero real un salto "
+                     "puede cerrar la operación algo peor que el SL.")
+
     # Texto plano
     lines = [subject, "", when, "", f"SISTEMA: {'todo OK' if ok else 'HAY COMPONENTES CON FALLO'}"]
     lines += [f"  {icon} {name}: {detail}" for name, icon, detail in health_rows]
+    lines += ["", "NOTICIAS DE IMPACTO ALTO (próximas 24 h):"]
+    lines += [f"  {r[0]} · {r[1]} · {r[2]} (previsión {r[3]}, anterior {r[4]}) → {r[5]}" for r in news_rows]
+    lines += [f"  {news_note}"]
     lines += ["", sessions_now]
     for s in sections:
         lines += ["", f"== {s['name']} · precio {s['close']} ==", f"MODELO: {s['detail']}"] + ([f"  {s['ref']}"] if s["ref"] else [])
@@ -474,6 +492,10 @@ def build_report(datas) -> Tuple[str, str, str]:
 
 <h2 {h2}>{'✅ Sistema funcionando' if ok else '⚠️ Hay componentes con fallo'}</h2>
 {table(["Componente", "", "Detalle"], health_rows)}
+
+<h2 {h2}>📰 Noticias de impacto alto (próximas 24 h)</h2>
+{table(["Hora", "Moneda", "Noticia", "Previsión", "Anterior", "Afecta a"], news_rows) if news_rows else ""}
+<p style="font-size:12px;color:{TEXT_SECONDARY};margin:6px 0 0">{news_note}</p>
 {''.join(parts)}
 
 <h2 {h2}>Cuenta simulada</h2>
@@ -564,8 +586,11 @@ def collect(bus, checker, now: Optional[datetime] = None) -> List[ReportData]:
 
 
 def send_daily_report(email, telegram, bus, checker, now: Optional[datetime] = None) -> bool:
+    from econ_calendar import calendar_for_report
+
     datas = collect(bus, checker, now)
-    subject, html, text = build_report(datas)
+    events = calendar_for_report([d.pair for d in datas], datas[0].now)
+    subject, html, text = build_report(datas, events)
     images = report_images(datas)
     sent = email.send_html(subject, html, text, images=images)
     telegram.send_message(text.replace("_", "/"))  # "_" rompe el Markdown de Telegram
@@ -586,8 +611,10 @@ def main():
     bus, checker = EventBus(), HealthChecker()
     try:
         if args.guardar:
+            from econ_calendar import calendar_for_report
+
             datas = collect(bus, checker)
-            subject, html, _ = build_report(datas)
+            subject, html, _ = build_report(datas, calendar_for_report([d.pair for d in datas], datas[0].now))
             out = Path(args.guardar)
             out.mkdir(parents=True, exist_ok=True)
             for name, png in report_images(datas).items():

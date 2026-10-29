@@ -21,9 +21,14 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
   - **Ninguna cumple la regla.** El modelo v1 solo tiene algo en H1; queda `CANDLE_GRANULARITY=H1` sin cambios.
   - Llevamos 25 combinaciones probadas: para dinero real hace falta p < 0.002.
 - `docs/DIAGNOSTICO.md` actualizado (P2 y P5 resueltos, nuevo P11 sobre el deslizamiento en noticias).
+- **Calendario económico en el reporte** (`services/monitoring/src/econ_calendar.py`):
+  - noticias de impacto alto de las próximas 24 h, de las monedas de los instrumentos seguidos (el oro con USD);
+  - en hora de Ecuador, con nombre en español, previsión, dato anterior y a qué instrumento afecta;
+  - la primera de las próximas 12 h va en el asunto.
+  - Fuente: JSON público de ForexFactory (`ECON_CALENDAR_URL`, `ENABLE_ECON_CALENDAR`). Si falla, el reporte sale igual con un aviso. Solo informativo: el modelo no lo usa.
+- 141 tests pasan.
 - **Siguiente paso:**
-  - `git push` y Redeploy en Dokploy (gráficos);
-  - calendario económico en el reporte (pendiente de confirmar);
+  - Redeploy en Dokploy (gráficos y calendario);
   - dejar correr el paper trading 2–3 meses y compararlo con `produccion.referencia_backtest`.
 
 ## 2026-10-28 (gráficos estilo TradingView) · DESKTOP-RC7UDV1

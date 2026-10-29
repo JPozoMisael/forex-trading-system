@@ -131,6 +131,9 @@ class Settings:
     # Horas de los reportes EN HORA LOCAL (HH:MM separadas por coma): 01:30 antes
     # de Londres (abre 2:00 en Ecuador) y 08:00 con Nueva York abierta.
     report_times: List[str] = field(default_factory=lambda: _get_list("REPORT_TIMES", "01:30,08:00"))
+    # Calendario económico en el reporte (noticias de impacto alto de las monedas operadas)
+    enable_econ_calendar: bool = _get_bool("ENABLE_ECON_CALENDAR", "true")
+    econ_calendar_url: str = os.getenv("ECON_CALENDAR_URL", "https://nfs.faireconomy.media/ff_calendar_thisweek.json")
 
     # Streams de Redis (persistentes: un servicio caído no pierde mensajes)
     channel_market_candle: str = "market:candle"          # Nueva vela cerrada (sufijo :PAR)

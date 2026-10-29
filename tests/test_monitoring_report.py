@@ -355,3 +355,56 @@ def test_closed_trade_email_without_chart_or_db_still_goes_out():
     assert send_trade_report(email, trade, load=lambda _id: None, fetch=broken)
     subject, html, text, images = email.html[0]
     assert images == {} and "cid:operacion" not in html and "−$99.45" in subject
+
+
+# ------------------------------------------------------------- calendario económico
+
+CAL = [
+    {"title": "Federal Funds Rate", "country": "USD", "date": "2026-10-28T14:00:00-04:00", "impact": "High",
+     "forecast": "4.00%", "previous": "4.00%"},
+    {"title": "Advance GDP q/q", "country": "USD", "date": "2026-10-29T08:30:00-04:00", "impact": "High",
+     "forecast": "2.2%", "previous": "3.2%"},
+    {"title": "Main Refinancing Rate", "country": "EUR", "date": "2026-10-29T08:15:00-04:00", "impact": "High",
+     "forecast": "2.15%", "previous": "2.15%"},
+    {"title": "CPI y/y", "country": "AUD", "date": "2026-10-28T20:30:00-04:00", "impact": "High",
+     "forecast": "4.2%", "previous": "4.0%"},
+    {"title": "Retail Sales m/m", "country": "USD", "date": "2026-10-29T08:30:00-04:00", "impact": "Medium",
+     "forecast": "0.3%", "previous": "0.1%"},
+]
+
+
+def test_calendar_keeps_high_impact_news_of_traded_currencies():
+    from econ_calendar import upcoming
+
+    now = datetime(2026, 10, 29, 6, 30, tzinfo=UTC)  # jue 1:30 a. m. en Ecuador
+    events = upcoming(CAL, ["EUR_USD", "XAU_USD"], now)
+    # Fed ya pasó (ayer), AUD no se sigue, ventas minoristas es impacto medio
+    assert [e["titulo"] for e in events] == ["Decisión de tasas del BCE", "PIB adelantado (trimestral)"]
+    assert events[1]["afecta"] == ["EUR_USD", "XAU_USD"]  # el oro se mueve con el dólar
+    assert events[0]["afecta"] == ["EUR_USD"]
+
+
+def test_report_shows_news_in_local_time():
+    from econ_calendar import upcoming
+
+    data = _report_data(with_trades=False)
+    now = datetime(2026, 10, 29, 6, 30, tzinfo=UTC)
+    data.now = now
+    subject, html, text = build_report(data, upcoming(CAL, ["EUR_USD"], now))
+    assert "📰 Decisión de tasas del BCE 7:15 a. m." in subject
+    assert "jue 29/10 7:30 a. m. · USD · PIB adelantado (trimestral) (previsión 2.2%, anterior 3.2%) → EUR/USD" in text
+    assert "Noticias de impacto alto" in html
+
+
+def test_report_still_goes_out_when_calendar_fails():
+    from econ_calendar import calendar_for_report
+
+    def broken():
+        raise ConnectionError("sin internet")
+
+    data = _report_data(with_trades=False)
+    events = calendar_for_report(["EUR_USD"], data.now, fetch=broken)
+    assert events is None
+    _, _, text = build_report(data, events)
+    assert "No se pudo leer el calendario" in text
+    assert "Sin noticias de impacto alto" in build_report(data)[2]
