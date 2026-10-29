@@ -30,7 +30,15 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
   - Londres y Nueva York se calculan de 8:00 a 17:00 en su ciudad (`zoneinfo`).
   - Antes estaban fijas en UTC de verano y el reporte decía "Londres abre 2:00 a. m." cuando desde el 25 de octubre abre a las 3:00. Desde el 1 de noviembre Nueva York abre a las 8:00 de Ecuador.
 - Nuevos pendientes en DIAGNOSTICO: P12 (swap en la simulación), P13 (volumen de modelos), P14 (MT5 en Linux para dinero real), P15 (reentrenamiento).
-- 142 tests pasan.
+- **Auditoría final.** Sin problemas de seguridad:
+  - ningún secreto en git (`.env`, `models/`, `data/` y `reports/` ignorados);
+  - `DRY_RUN=true` y `ALLOW_LIVE_TRADING=false` por defecto, y el execution-engine se niega a arrancar con una cuenta MT5 real sin el candado;
+  - solo el execution-engine envía órdenes;
+  - el risk-manager rechaza si falla la BD o Redis;
+  - los lotes se redondean hacia abajo.
+  - Corregido: si fallaba la cuadrícula de temporalidades, el correo mostraba una imagen rota.
+  - Menor, aceptado: `scripts/run_all.py` lee `SERVICES` con `os.getenv` (es el supervisor, no un servicio).
+- 143 tests pasan.
 - **Siguiente paso:**
   - Redeploy en Dokploy (gráficos y calendario);
   - dejar correr el paper trading 2–3 meses y compararlo con `produccion.referencia_backtest`.

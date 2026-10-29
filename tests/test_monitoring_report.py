@@ -424,3 +424,19 @@ def test_sessions_follow_daylight_saving_of_each_city():
     assert "Nueva York abre 8:00 a. m. y cierra 5:00 p. m." in sessions_local_text(nov)
     assert active_sessions(nov) == ["Londres", "Nueva York"] and upcoming_sessions(nov) == ["Nueva York"]
     assert active_sessions(datetime(2026, 11, 3, 12, 30, tzinfo=UTC)) == ["Londres"]  # NY aún cerrada
+
+
+def test_failed_timeframe_chart_is_not_referenced(monkeypatch):
+    import daily_report
+    from daily_report import collect_timeframes, report_images
+
+    data = _report_data(with_trades=False)
+    data.timeframes = collect_timeframes("EUR_USD", data.now, skip="H1", fetch=_fake_fetch(data.candles))
+
+    def broken(*a, **k):
+        raise ValueError("gráfico roto")
+
+    monkeypatch.setattr(daily_report, "plot_timeframes", broken)
+    images = report_images([data])
+    assert set(images) == {"grafico_EUR_USD"}
+    assert "cid:tf_EUR_USD" not in build_report(data)[1]

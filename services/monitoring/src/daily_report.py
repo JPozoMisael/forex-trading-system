@@ -573,6 +573,7 @@ def report_images(datas: List[ReportData]) -> Dict[str, bytes]:
                 images[f"tf_{d.pair}"] = plot_timeframes(d.pair, d.timeframes)
             except Exception:
                 log.exception(f"No se pudo dibujar las temporalidades de {d.pair}")
+                d.timeframes = {}  # el correo no referencia una imagen que no existe
     return images
 
 
@@ -610,8 +611,8 @@ def send_daily_report(email, telegram, bus, checker, now: Optional[datetime] = N
 
     datas = collect(bus, checker, now)
     events = calendar_for_report([d.pair for d in datas], datas[0].now)
+    images = report_images(datas)  # antes del texto: si un gráfico falla, el HTML no lo referencia
     subject, html, text = build_report(datas, events)
-    images = report_images(datas)
     sent = email.send_html(subject, html, text, images=images)
     telegram.send_message(text.replace("_", "/"))  # "_" rompe el Markdown de Telegram
     return sent
@@ -634,10 +635,11 @@ def main():
             from econ_calendar import calendar_for_report
 
             datas = collect(bus, checker)
+            images = report_images(datas)
             subject, html, _ = build_report(datas, calendar_for_report([d.pair for d in datas], datas[0].now))
             out = Path(args.guardar)
             out.mkdir(parents=True, exist_ok=True)
-            for name, png in report_images(datas).items():
+            for name, png in images.items():
                 (out / f"{name}.png").write_bytes(png)
                 html = html.replace(f"cid:{name}", f"{name}.png")
             (out / "reporte.html").write_text(html, encoding="utf-8")
