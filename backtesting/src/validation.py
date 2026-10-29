@@ -26,7 +26,7 @@ import pandas as pd
 
 from engine import BacktestEngine
 from metrics import BacktestMetrics, calculate_metrics
-from shared.fx import contract_size, get_pip_size, quote_to_usd_rate
+from shared.fx import contract_size, financing_cost_usd, get_pip_size, quote_to_usd_rate
 from shared.models import OrderSide, Signal
 from strategies.base_strategy import BaseStrategy
 
@@ -123,7 +123,7 @@ def make_windows(index: pd.DatetimeIndex, initial_train_years: float, test_month
 
 
 def opposite_r(trade: Dict[str, Any], seg: pd.DataFrame, pair: str, spread_pips: float,
-               slippage_pips: float, commission_per_lot: float) -> float:
+               slippage_pips: float, commission_per_lot: float, financing_annual_pct: float = 0.0) -> float:
     """
     Resultado en R de la operación contraria: misma vela de entrada, mismas
     distancias de SL/TP, dirección opuesta y los mismos costos.
@@ -143,8 +143,9 @@ def opposite_r(trade: Dict[str, Any], seg: pd.DataFrame, pair: str, spread_pips:
         "take_profit": entry + tp_d if side == OrderSide.BUY else entry - tp_d,
     }
 
-    exit_price = None
+    exit_price, exit_i = None, len(seg) - 1
     for i in range(i0, len(seg)):
+        exit_i = i
         exit_price, reason = BacktestEngine._check_exit(
             opp, float(seg["open"].iloc[i]), float(seg["high"].iloc[i]), float(seg["low"].iloc[i]), hs, slip
         )
@@ -157,6 +158,8 @@ def opposite_r(trade: Dict[str, Any], seg: pd.DataFrame, pair: str, spread_pips:
     diff = (exit_price - entry) if side == OrderSide.BUY else (entry - exit_price)
     units = trade["units"]
     pnl = diff * units * quote_to_usd_rate(pair, exit_price) - units / contract_size(pair) * commission_per_lot
+    days = (seg.index[exit_i] - seg.index[i0]).total_seconds() / 86400.0
+    pnl -= financing_cost_usd(pair, units, entry, days, financing_annual_pct)
     risk = sl_d * units * quote_to_usd_rate(pair, entry)
     return pnl / risk if risk > 0 else 0.0
 
@@ -167,7 +170,7 @@ def trade_r(trade: Dict[str, Any], pair: str) -> float:
 
 
 def buy_and_hold(seg: pd.DataFrame, balance: float, pair: str, spread_pips: float,
-                 slippage_pips: float, commission_per_lot: float):
+                 slippage_pips: float, commission_per_lot: float, financing_annual_pct: float = 0.0):
     """Compra al inicio de la ventana con el saldo como nocional (1x) y vende al final."""
     pip = get_pip_size(pair)
     hs, slip = spread_pips * pip / 2, slippage_pips * pip
@@ -178,7 +181,8 @@ def buy_and_hold(seg: pd.DataFrame, balance: float, pair: str, spread_pips: floa
     rate = bid.map(lambda p: quote_to_usd_rate(pair, p))
     equity = balance + (bid - entry) * units * rate - comm
     exit_price = float(seg["close"].iloc[-1]) - hs - slip
-    pnl = (exit_price - entry) * units * quote_to_usd_rate(pair, exit_price) - comm
+    days = (seg.index[-1] - seg.index[0]).total_seconds() / 86400.0
+    pnl = (exit_price - entry) * units * quote_to_usd_rate(pair, exit_price) - comm         - financing_cost_usd(pair, units, entry, days, financing_annual_pct)
     equity.iloc[-1] = balance + pnl
     trade = {"pnl": round(pnl, 2), "side": "buy", "entry_time": seg.index[0], "exit_time": seg.index[-1]}
     return equity.rename("Equity"), [trade]
@@ -269,6 +273,8 @@ def validate(
         "spread_pips": float(cfg["costes"]["spread_pips"]),
         "slippage_pips": float(cfg["costes"]["slippage_pips"]),
         "commission_per_lot": float(cfg["costes"]["comision_por_lote"]),
+        # Swap aproximado (0 si no está en la config: así se corrieron las pruebas de H1 y menores)
+        "financing_annual_pct": float(cfg["costes"].get("financiamiento_anual_pct", 0.0)),
     }
     engine_kwargs = dict(
         risk_per_trade_pct=float(cfg["riesgo"]["riesgo_por_operacion_pct"]),

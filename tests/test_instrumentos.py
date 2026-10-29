@@ -51,3 +51,43 @@ def test_activation_rules():
     strong = {"veredicto": "VENTAJA CON EVIDENCIA", "retorno_%": 10, "p_valor": 0.01}
     assert not real_money_eligible(strong, 15)          # 0.01 > 0.05 / 15
     assert real_money_eligible(dict(strong, p_valor=0.001), 15)
+
+
+# ------------------------------------------------------------- swing: swap y Bonferroni acumulado
+
+def test_swap_is_annual_rate_on_notional_per_calendar_day():
+    from shared.fx import financing_cost_usd
+
+    # 100.000 EUR a 1.10 = 110.000 USD de nocional; 3 % anual durante 1 año
+    assert financing_cost_usd("EUR_USD", 100_000, 1.10, 365, 3.0) == pytest.approx(3300)
+    # USD_JPY: el nocional ya está en USD (100.000 USD), 10 días
+    assert financing_cost_usd("USD_JPY", 100_000, 157.0, 10, 3.0) == pytest.approx(100_000 * 0.03 * 10 / 365)
+    # oro: 5 onzas a 4000 = 20.000 USD, 30 días
+    assert financing_cost_usd("XAU_USD", 5, 4000.0, 30, 3.0) == pytest.approx(20_000 * 0.03 * 30 / 365)
+    assert financing_cost_usd("EUR_USD", 100_000, 1.10, 10, 0.0) == 0.0
+
+
+def test_engine_charges_swap_only_when_configured():
+    import pandas as pd
+    from engine import BacktestEngine
+    from shared.models import OrderSide
+
+    trade = {"side": OrderSide.BUY, "entry_price": 1.10, "units": 100_000,
+             "entry_time": pd.Timestamp("2026-01-05", tz="UTC")}
+    exit_time = pd.Timestamp("2026-01-15", tz="UTC")
+    no_swap = BacktestEngine().trade_pnl(trade, 1.11, "EUR_USD", exit_time)[0]
+    with_swap = BacktestEngine(financing_annual_pct=3.0).trade_pnl(trade, 1.11, "EUR_USD", exit_time)[0]
+    assert no_swap == pytest.approx(1000)
+    assert no_swap - with_swap == pytest.approx(110_000 * 0.03 * 10 / 365)
+
+
+def test_bonferroni_counts_all_previous_tests():
+    from run_instrumentos import summarize
+
+    cfg = {"validacion": {"inicio_prueba_final": "2023-10-27"}}
+    row = {"instrumento": "XAU_USD", "temporalidad": "H4", "retorno_%": 9.0, "buy_hold_%": 50.0, "max_dd_%": 5.0,
+           "profit_factor": 1.3, "operaciones": 60, "win_rate_%": 45.0, "expectativa_r": 0.2, "ic_bajo": 0.05,
+           "ic_alto": 0.4, "p_valor": 0.004, "veredicto": "VENTAJA CON EVIDENCIA", "informe": "x"}
+    md = summarize([row], cfg, previous_tests=15, title="swing")
+    assert "16 combinaciones probadas en total" in md and "p < 0.0031" in md
+    assert real_money_eligible(row, 10) and not real_money_eligible(row, 16)

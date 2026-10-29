@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from shared.models import Signal, SignalDirection, OrderSide
 from strategies.base_strategy import BaseStrategy
 from position_sizing import calculate_position_size, get_pip_size
-from shared.fx import contract_size, quote_to_usd_rate
+from shared.fx import contract_size, financing_cost_usd, quote_to_usd_rate
 from metrics import BacktestMetrics, calculate_metrics
 
 
@@ -55,6 +55,7 @@ class BacktestEngine:
         max_daily_loss_pct: Optional[float] = None,
         default_sl_pips: float = 20.0,
         default_tp_pips: float = 40.0,
+        financing_annual_pct: float = 0.0,
     ):
         self.initial_balance = initial_balance
         self.risk_per_trade_pct = risk_per_trade_pct
@@ -64,6 +65,7 @@ class BacktestEngine:
         self.max_daily_loss_pct = max_daily_loss_pct  # None = sin límite
         self.default_sl_pips = default_sl_pips
         self.default_tp_pips = default_tp_pips
+        self.financing_annual_pct = financing_annual_pct  # swap aproximado, % anual del nocional (0 = no se cobra)
 
     def run(
         self,
@@ -98,7 +100,7 @@ class BacktestEngine:
 
         def close_trade(trade: Dict[str, Any], exit_price: float, exit_time, reason: str):
             nonlocal balance
-            pnl, comm, diff = self.trade_pnl(trade, exit_price, pair)
+            pnl, comm, diff = self.trade_pnl(trade, exit_price, pair, exit_time)
             balance += pnl
             trades.append(
                 {
@@ -115,6 +117,7 @@ class BacktestEngine:
                     "stop_loss": round(trade["stop_loss"], 5),
                     "take_profit": round(trade["take_profit"], 5),
                     "commission": round(comm, 2),
+                    "swap": round(self.swap_usd(trade, exit_time, pair), 2),
                     "pnl": round(pnl, 2),
                     "pips": round(diff / pip_size, 1),
                     "roi_pct": round(pnl / trade["risk_usd"] * 100, 1) if trade["risk_usd"] else 0.0,
@@ -198,13 +201,20 @@ class BacktestEngine:
             trades_df=trades_df,
         )
 
-    def trade_pnl(self, trade: Dict[str, Any], exit_price: float, pair: str):
-        """(pnl neto en USD, comisión, diferencia de precio a favor) al cerrar `trade` en `exit_price`."""
+    def trade_pnl(self, trade: Dict[str, Any], exit_price: float, pair: str, exit_time=None):
+        """(pnl neto en USD, comisión, diferencia de precio a favor) al cerrar `trade` en `exit_price`.
+        Con `exit_time` también descuenta el swap (si financing_annual_pct > 0)."""
         is_buy = trade["side"] == OrderSide.BUY
         diff = (exit_price - trade["entry_price"]) if is_buy else (trade["entry_price"] - exit_price)
         gross = diff * trade["units"] * quote_to_usd_rate(pair, exit_price)  # en USD
         comm = trade["units"] / contract_size(pair) * self.commission_per_lot
-        return gross - comm, comm, diff
+        return gross - comm - self.swap_usd(trade, exit_time, pair), comm, diff
+
+    def swap_usd(self, trade: Dict[str, Any], exit_time, pair: str) -> float:
+        if exit_time is None or not self.financing_annual_pct:
+            return 0.0
+        days = (pd.Timestamp(exit_time) - pd.Timestamp(trade["entry_time"])).total_seconds() / 86400.0
+        return financing_cost_usd(pair, trade["units"], trade["entry_price"], days, self.financing_annual_pct)
 
     def _open_trade(
         self,

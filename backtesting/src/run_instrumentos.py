@@ -4,6 +4,7 @@ con el protocolo pre-registrado en config.yaml (sección multi_instrumento).
 
     python backtesting/src/run_instrumentos.py                       # todo lo de config.yaml
     python backtesting/src/run_instrumentos.py --instrumentos XAU_USD --temporalidades H1
+    python backtesting/src/run_instrumentos.py --seccion swing       # H4 y diario, con swap
 
 Para cada combinación: descarga la historia de Dukascopy, valida walk-forward
 en el periodo final con los costes del instrumento y escribe su informe. Al
@@ -44,11 +45,13 @@ def real_money_eligible(row: dict, n_tests: int) -> bool:
     return row["veredicto"] == "VENTAJA CON EVIDENCIA" and row["p_valor"] < 0.05 / max(n_tests, 1)
 
 
-def run_one(cfg: dict, pair: str, gran: str) -> dict:
+def run_one(cfg: dict, pair: str, gran: str, extra_costs: dict = None) -> dict:
     icfg = instrument_config(cfg, pair, gran)
+    icfg["costes"].update(extra_costs or {})
     df = load_from_dukascopy(pair, gran, years=icfg["mercado"]["anios_historia"])
     print(f"\n=== {pair} {gran}: {len(df):,} velas [{df.index[0]:%Y-%m-%d} a {df.index[-1]:%Y-%m-%d}] | "
-          f"spread {icfg['costes']['spread_pips']} + slippage {icfg['costes']['slippage_pips']} pips ===")
+          f"spread {icfg['costes']['spread_pips']} + slippage {icfg['costes']['slippage_pips']} pips"
+          f"{' + swap ' + str(icfg['costes']['financiamiento_anual_pct']) + ' % anual' if icfg['costes'].get('financiamiento_anual_pct') else ''} ===")
     report = validate(df, {"ml": ml_factory(df, icfg, pair)}, pair, gran, icfg, periodo="final", log=lambda m: None)
     m, v = report.results["ml"].metrics, report.verdicts["ml"]
     out_dir = write_report(report, dict(DISPLAY_NAMES, ml=f"Modelo {pair} {gran}"), main_strategy="ml")
@@ -66,17 +69,17 @@ def run_one(cfg: dict, pair: str, gran: str) -> dict:
     return row
 
 
-def summarize(rows: list, cfg: dict) -> str:
-    n = len(rows)
+def summarize(rows: list, cfg: dict, previous_tests: int = 0, title: str = "multi-instrumento") -> str:
+    n = len(rows) + previous_tests  # Bonferroni con todas las combinaciones probadas, no solo las de esta corrida
     table = pd.DataFrame(rows)
     table["paper"] = [("SÍ" if paper_eligible(r) else "no") for r in rows]
     table["dinero_real"] = [("SÍ" if real_money_eligible(r, n) else "no") for r in rows]
     winners = table[table["paper"] == "SÍ"]
     lines = [
-        f"# Prueba final multi-instrumento · {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC",
+        f"# Prueba final {title} · {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC",
         "",
         f"Modelo v1_base sin ajustes por instrumento. Periodo final desde {cfg['validacion']['inicio_prueba_final']}. "
-        f"{n} combinaciones probadas: con p < 0.05 cabría esperar ~{n * 0.05:.1f} positivas por puro azar, "
+        f"{n} combinaciones probadas en total ({len(rows)} en esta corrida): con p < 0.05 cabría esperar ~{n * 0.05:.1f} positivas por puro azar, "
         f"por eso para dinero real se exige p < {0.05 / n:.4f}.",
         "",
         table.drop(columns=["informe"]).to_markdown(index=False),
@@ -92,22 +95,26 @@ def summarize(rows: list, cfg: dict) -> str:
 
 def main():
     cfg = load_trading_config()
-    mi = cfg["multi_instrumento"]
     parser = argparse.ArgumentParser(description="Prueba final del modelo en varios instrumentos")
-    parser.add_argument("--instrumentos", default=",".join(mi["instrumentos"]))
-    parser.add_argument("--temporalidades", default=",".join(mi["temporalidades"]))
+    parser.add_argument("--seccion", default="multi_instrumento",
+                        help="sección pre-registrada de config.yaml (multi_instrumento | swing)")
+    parser.add_argument("--instrumentos")
+    parser.add_argument("--temporalidades")
     args = parser.parse_args()
+    mi = cfg[args.seccion]
+    args.instrumentos = args.instrumentos or ",".join(mi["instrumentos"])
+    args.temporalidades = args.temporalidades or ",".join(mi["temporalidades"])
 
     rows = []
     for gran in [g.strip().upper() for g in args.temporalidades.split(",") if g.strip()]:
         for pair in [p.strip().upper() for p in args.instrumentos.split(",") if p.strip()]:
             try:
-                rows.append(run_one(cfg, pair, gran))
+                rows.append(run_one(cfg, pair, gran, mi.get("costes")))
             except Exception as e:  # un instrumento sin datos no detiene a los demás
                 print(f"[x] {pair} {gran}: {e}")
 
-    md = summarize(rows, cfg)
-    out = REPORTS_DIR / f"{datetime.now(timezone.utc):%Y%m%d_%H%M}_instrumentos.md"
+    md = summarize(rows, cfg, int(mi.get("pruebas_previas", 0)), args.seccion.replace("_", "-"))
+    out = REPORTS_DIR / f"{datetime.now(timezone.utc):%Y%m%d_%H%M}_{args.seccion}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(md, encoding="utf-8")
     print("\n" + md + f"\n\n[v] Resumen: {out}")

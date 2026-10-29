@@ -71,6 +71,19 @@ def quote_to_usd_rate(pair: str, price: float) -> Optional[float]:
     return None
 
 
+def financing_cost_usd(pair: str, units: float, price: float, days: float, annual_pct: float) -> float:
+    """
+    Swap (financiamiento nocturno) aproximado: `annual_pct` % anual sobre el
+    nocional, cobrado por cada día de calendario que la posición sigue
+    abierta (los fines de semana cuentan, como el swap triple del miércoles).
+    Siempre es un costo, en ambas direcciones: es la aproximación conservadora.
+    """
+    rate = quote_to_usd_rate(pair, price)
+    if not annual_pct or days <= 0 or rate is None:
+        return 0.0
+    return units * price * rate * annual_pct / 100.0 * days / 365.0
+
+
 def pnl_in_usd(pair: str, price_diff: float, units: float, exit_price: float) -> Optional[float]:
     """PnL en USD de una posición de `units` con una diferencia de precio `price_diff`."""
     rate = quote_to_usd_rate(pair, exit_price)

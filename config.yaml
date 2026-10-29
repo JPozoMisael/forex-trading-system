@@ -111,6 +111,28 @@ multi_instrumento:
   instrumentos: [EUR_USD, GBP_USD, USD_JPY, AUD_USD, XAU_USD]
   temporalidades: [H1, M30, M15]
 
+# --------------------------------------------------------------------------
+# Swing trading (4 horas y diario). PRE-REGISTRADO el 2026-10-29, antes de correr:
+#   - Mismo modelo v1_base, sin ajustar nada (horizonte 48 velas: ~8 días en H4,
+#     ~2 meses en D; SL 2 ATR y TP 3 ATR de la temporalidad).
+#   - Mismos costes por instrumento y además SWAP: las posiciones duran días, así
+#     que se cobra un 3 % anual sobre el nocional por cada día abierta, en ambas
+#     direcciones (aproximación conservadora de los swaps de XM). También se le
+#     cobra a "comprar y mantener".
+#   - Una sola pasada en la prueba final (desde validacion.inicio_prueba_final):
+#     python backtesting/src/run_instrumentos.py --seccion swing
+#   - Mismas reglas que multi_instrumento. Para dinero real, Bonferroni con TODAS
+#     las combinaciones probadas hasta ahora: 15 anteriores + 10 nuevas = 25
+#     (p < 0.002).
+#   - Si gana alguna, activarla en vivo requiere un cambio aparte (hoy el sistema
+#     opera una sola temporalidad, H1); se decide después de ver el resultado.
+swing:
+  instrumentos: [EUR_USD, GBP_USD, USD_JPY, AUD_USD, XAU_USD]
+  temporalidades: [H4, D]
+  costes:
+    financiamiento_anual_pct: 3.0
+  pruebas_previas: 15
+
 # Instrumentos que opera el strategy-engine (cada uno con su modelo). Solo se
 # añaden los que cumplan la regla de arriba.
 # Resultado del 2026-10-28 (reports/20261028_1541_instrumentos.md): en H1 cumplen
