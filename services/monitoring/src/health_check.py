@@ -8,6 +8,7 @@ abierto) y que el strategy-engine evalúe la última vela.
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
+from zoneinfo import ZoneInfo
 
 import psycopg2
 
@@ -23,20 +24,42 @@ log = get_logger(__name__)
 COMPONENTS = ("postgres", "redis", "broker", "datos", "estrategia")
 
 
+NEW_YORK = ZoneInfo("America/New_York")
+
+
 def market_open(now: datetime) -> bool:
-    """Forex abre el domingo ~22:00 UTC y cierra el viernes ~21:00 UTC."""
-    wd, h = now.weekday(), now.hour
+    """El mercado abre el domingo a las 17:00 de Nueva York y cierra el viernes a las 17:00 (sigue su horario de verano)."""
+    ny = now.astimezone(NEW_YORK)
+    wd, h = ny.weekday(), ny.hour
     if wd == 5:  # sábado
         return False
-    if wd == 4 and h >= 21:
+    if wd == 4 and h >= 17:
         return False
-    if wd == 6 and h < 22:
+    if wd == 6 and h < 17:
         return False
     return True
 
 
-def candle_status(last_candle: Optional[datetime], now: datetime, gran_minutes: int) -> Dict[str, Any]:
-    """¿Llegan velas nuevas? Tolerancia: una vela y media de retraso sobre lo esperado."""
+def daily_break(pair: str, start: datetime, end: datetime) -> timedelta:
+    """
+    El oro (y los metales) deja de cotizar una hora cada día, de 17:00 a 18:00
+    de Nueva York: en esa hora no hay vela y no es un fallo. Devuelve cuánto
+    tiempo de pausa cae entre `start` y `end`.
+    """
+    if not pair.upper().startswith(("XAU", "XAG")):
+        return timedelta(0)
+    total = timedelta(0)
+    day = start.astimezone(NEW_YORK).date()
+    while day <= end.astimezone(NEW_YORK).date():
+        pause = datetime(day.year, day.month, day.day, 17, tzinfo=NEW_YORK)
+        if start <= pause + timedelta(hours=1) and pause <= end:
+            total += timedelta(hours=1)
+        day += timedelta(days=1)
+    return total
+
+
+def candle_status(last_candle: Optional[datetime], now: datetime, gran_minutes: int, pair: str = "") -> Dict[str, Any]:
+    """¿Llegan velas nuevas? Tolerancia: una vela y media de retraso (más la pausa diaria del oro)."""
     # Recién abierto el mercado aún no hay vela nueva: no se exige nada
     if not (market_open(now) and market_open(now - timedelta(hours=2))):
         return {"status": "n/a", "detail": "mercado cerrado"}
@@ -44,7 +67,7 @@ def candle_status(last_candle: Optional[datetime], now: datetime, gran_minutes: 
         return {"status": "unhealthy", "detail": "no hay velas en la BD"}
     bar = timedelta(minutes=gran_minutes)
     lag = now - (last_candle + bar)  # tiempo desde que cerró la última vela guardada
-    if lag > bar * 1.5:
+    if lag > bar * 1.5 + daily_break(pair, last_candle + bar, now):
         return {"status": "unhealthy",
                 "detail": f"la última vela cerró el {fmt_local(last_candle + bar)}; sin velas nuevas hace {int(lag.total_seconds() // 60)} min"}
     return {"status": "healthy", "detail": f"última vela cerró el {fmt_local(last_candle + bar)}"}
@@ -163,7 +186,7 @@ class HealthChecker:
                 state = self.bus.get_json(f"{settings.key_strategy_state_prefix}{pair}")
             except Exception:
                 state = None
-            per_pair[pair] = (candle_status(last, now, gran), strategy_status(state, last, now, gran))
+            per_pair[pair] = (candle_status(last, now, gran, pair), strategy_status(state, last, now, gran))
         return {"datos": combine_status({p: s[0] for p, s in per_pair.items()}),
                 "estrategia": combine_status({p: s[1] for p, s in per_pair.items()})}
 

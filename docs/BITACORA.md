@@ -5,6 +5,14 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-30 (falsa alarma del oro) · DESKTOP-RC7UDV1
+
+- **Falsa alarma el 29/10 a las 5:32 p. m.:** "XAU_USD sin velas nuevas hace 92 min", con recuperación a las 6:00.
+  - Causa: el oro no cotiza de 17:00 a 18:00 de Nueva York todos los días, así que esa hora no tiene vela.
+  - Arreglo: `health_check.daily_break` suma esa hora a la tolerancia de los metales.
+- `market_open` sigue la hora de Nueva York: el mercado abre el domingo a las 17:00 y cierra el viernes a las 17:00, con horario de verano.
+- 145 tests pasan.
+
 ## 2026-10-29 (prueba de swing H4 / diario) · DESKTOP-RC7UDV1
 
 - **Swap en el backtester:** `financiamiento_anual_pct`, 0 por defecto, así que las pruebas anteriores no cambian.

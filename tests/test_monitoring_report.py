@@ -440,3 +440,21 @@ def test_failed_timeframe_chart_is_not_referenced(monkeypatch):
     images = report_images([data])
     assert set(images) == {"grafico_EUR_USD"}
     assert "cid:tf_EUR_USD" not in build_report(data)[1]
+
+
+def test_gold_daily_pause_is_not_a_failure():
+    # 29 oct: la última vela del oro cerró a las 21:00 UTC (17:00 Nueva York) y la pausa dura hasta las 22:00.
+    # El aviso falso llegó a las 22:32 UTC (5:32 p. m. en Ecuador).
+    last = datetime(2026, 10, 29, 20, tzinfo=UTC)
+    at_alarm = datetime(2026, 10, 29, 22, 32, tzinfo=UTC)
+    assert candle_status(last, at_alarm, 60, "XAU_USD")["status"] == "healthy"
+    assert candle_status(last, at_alarm, 60, "EUR_USD")["status"] == "unhealthy"  # las divisas no pausan
+    # Si el oro tampoco trae la vela de las 22:00 a las 23:00, sí es un fallo
+    assert candle_status(last, datetime(2026, 10, 29, 23, 45, tzinfo=UTC), 60, "XAU_USD")["status"] == "unhealthy"
+
+
+def test_market_hours_follow_new_york_daylight_saving():
+    # Verano (EDT): cierra el viernes a las 21:00 UTC. Invierno (EST): a las 22:00 UTC.
+    assert not market_open(datetime(2026, 10, 30, 21, 30, tzinfo=UTC))
+    assert market_open(datetime(2026, 11, 6, 21, 30, tzinfo=UTC))
+    assert not market_open(datetime(2026, 11, 6, 22, 30, tzinfo=UTC))
