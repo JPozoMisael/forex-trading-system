@@ -378,13 +378,14 @@ def timeframe_rows(data: ReportData) -> List[List[str]]:
     frames = {data.granularity.upper(): data.candles, **data.timeframes}
     order = ["D", "H4", data.granularity.upper(), "M30", "M15"]
     names = {**{g: n for g, (n, _) in TIMEFRAMES.items()}, "H1": "1 hora"}
+    price = float(data.candles["close"].iloc[-1])  # el mismo precio del título de la sección
     rows = []
     for gran in dict.fromkeys(order):
         df = frames.get(gran)
         if df is None or len(df) < 30:
             continue
         bars = TIMEFRAMES.get(gran, (None, CHART_BARS))[1]
-        s = timeframe_summary(df, data.pair, bars)
+        s = timeframe_summary(df, data.pair, bars, price=price)
         where = "justo en" if abs(s["fib_dist"]) < s["atr"] * 0.1 else             f"{move_text(data.pair, s['fib_dist'])} {'encima' if s['fib_dist'] > 0 else 'debajo'} de"
         label = names.get(gran, gran) + (" (la del modelo)" if gran == data.granularity.upper() else "")
         rows.append([label, s["tendencia"], move_text(data.pair, s["atr"]), move_text(data.pair, s["rango"]),

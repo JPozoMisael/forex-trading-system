@@ -458,3 +458,17 @@ def test_market_hours_follow_new_york_daylight_saving():
     assert not market_open(datetime(2026, 10, 30, 21, 30, tzinfo=UTC))
     assert market_open(datetime(2026, 11, 6, 21, 30, tzinfo=UTC))
     assert not market_open(datetime(2026, 11, 6, 22, 30, tzinfo=UTC))
+
+
+def test_every_timeframe_row_uses_the_current_price():
+    from daily_report import timeframe_rows
+
+    data = _report_data(with_trades=False)
+    price = float(data.candles["close"].iloc[-1])
+    # Diario con el cierre de "ayer" muy por encima del precio actual
+    daily = generate_synthetic_forex_data(pair="EUR_USD", n_candles=300, granularity_minutes=1440, seed=3)
+    daily = daily[["open", "high", "low", "close"]] * (price * 1.02 / float(daily["close"].iloc[-1]))
+    data.timeframes = {"D": daily}
+    row = next(r for r in timeframe_rows(data) if r[0] == "Diario")
+    fib_price = float(row[4].split("(")[-1].rstrip(")"))
+    assert ("debajo" in row[4]) == (price < fib_price) and ("encima" in row[4]) == (price > fib_price)

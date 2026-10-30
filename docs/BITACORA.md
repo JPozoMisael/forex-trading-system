@@ -11,7 +11,8 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
   - Causa: el oro no cotiza de 17:00 a 18:00 de Nueva York todos los días, así que esa hora no tiene vela.
   - Arreglo: `health_check.daily_break` suma esa hora a la tolerancia de los metales.
 - `market_open` sigue la hora de Nueva York: el mercado abre el domingo a las 17:00 y cierra el viernes a las 17:00, con horario de verano.
-- 145 tests pasan.
+- **Tabla de temporalidades:** cada fila comparaba contra el cierre de su última vela completa. En el diario es el cierre de ayer, así que el reporte decía que el oro estaba "encima" de un nivel cuando ya estaba debajo. Ahora todas las filas usan el precio actual, el del título.
+- 146 tests pasan.
 
 ## 2026-10-29 (prueba de swing H4 / diario) · DESKTOP-RC7UDV1
 

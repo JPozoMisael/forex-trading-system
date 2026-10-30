@@ -97,13 +97,17 @@ def emas(df: pd.DataFrame) -> Dict[int, pd.Series]:
     return {p: df["close"].ewm(span=p, adjust=False).mean() for p in EMA_COLORS}
 
 
-def timeframe_summary(df: pd.DataFrame, pair: str, bars: int) -> Dict[str, Any]:
+def timeframe_summary(df: pd.DataFrame, pair: str, bars: int, price: Optional[float] = None) -> Dict[str, Any]:
     """
     Lectura rápida de una temporalidad: tendencia por EMAs, movimiento típico
     de una vela (ATR 14), rango de la ventana y nivel de Fibonacci más cercano.
+    `price`: precio actual. Sin él se usa el cierre de la última vela de `df`,
+    que en el diario es el de ayer: las filas de una tabla deben compararse
+    todas contra el mismo precio.
     """
     e = emas(df)
-    close, e50, e200 = float(df["close"].iloc[-1]), float(e[50].iloc[-1]), float(e[200].iloc[-1])
+    close = float(price) if price is not None else float(df["close"].iloc[-1])
+    e50, e200 = float(e[50].iloc[-1]), float(e[200].iloc[-1])
     if close > e50 > e200:
         trend = "alcista"
     elif close < e50 < e200:
