@@ -5,6 +5,16 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-10-31 (preparación de equipo nuevo) · DESKTOP-QQ3KOCN
+
+- Primera sesión en esta computadora: se creó `.venv` con Python 3.13.14 y se instaló `requirements-local.txt`. Las 20 dependencias están bien.
+- **146 tests pasan.** Informe en `docs/diagnosticos/2026-10-31_DESKTOP-QQ3KOCN.md`.
+- **Falta para correr el sistema aquí:**
+  - crear `.env` con las credenciales;
+  - instalar Docker Desktop y levantar `docker-compose-dev.yml` (Postgres y Redis), luego `scripts/init_db.py`;
+  - MetaTrader 5, solo si esta computadora usará la fuente MT5/XM.
+- Siguiente paso: completar lo anterior y volver a correr `diagnostico.py --guardar`.
+
 ## 2026-10-30 (falsa alarma del oro) · DESKTOP-RC7UDV1
 
 - **Falsa alarma el 29/10 a las 5:32 p. m.:** "XAU_USD sin velas nuevas hace 92 min", con recuperación a las 6:00.
