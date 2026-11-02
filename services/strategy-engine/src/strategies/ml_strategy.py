@@ -117,18 +117,23 @@ class MLStrategy(BaseStrategy):
             self.last_state = None
             return None
         self.last_state = {"p_long": round(p_long, 4), "p_short": round(p_short, 4), "umbral": self.threshold}
+        live = self._cache is None  # en el backtest (probabilidades precalculadas) no hace falta explicar nada
 
         if p_long >= self.threshold and p_long >= p_short:
             direction, sign, prob = SignalDirection.BUY, 1, p_long
         elif p_short >= self.threshold:
             direction, sign, prob = SignalDirection.SELL, -1, p_short
         else:
+            direction = None
+        if direction is None and not live:
             return None
 
         atr = float(calculate_atr(df["high"], df["low"], df["close"], self.atr_period).iloc[-1])
-        if not atr > 0:
-            return None
         close = float(df["close"].iloc[-1])
+        if live:
+            self.last_state.update(self._plan_state(df, close, atr))
+        if direction is None or not atr > 0:
+            return None
         ts = df.index[-1] if isinstance(df.index[-1], datetime) else datetime.now(timezone.utc)
         return Signal(
             pair=pair,
@@ -142,6 +147,21 @@ class MLStrategy(BaseStrategy):
             metadata={"p_long": round(p_long, 4), "p_short": round(p_short, 4), "atr": atr,
                       "umbral": self.threshold, "horizonte_velas": self.horizon},
         )
+
+    def _plan_state(self, df: pd.DataFrame, close: float, atr: float) -> Dict[str, Any]:
+        """
+        Lo que el reporte necesita para dibujar la operación que haría el modelo
+        aunque no haya señal: precio, ATR, múltiplos de SL/TP, horizonte y los
+        datos que más pesaron. La explicación es opcional: si falla, no frena la
+        evaluación de la vela.
+        """
+        plan: Dict[str, Any] = {"cierre": close, "atr": round(atr, 6) if atr > 0 else None,
+                                "sl_atr": self.sl_atr, "tp_atr": self.tp_atr, "horizonte_velas": self.horizon}
+        try:
+            plan["factores"] = self.model.explain(self._features(df))
+        except Exception:
+            pass
+        return plan
 
     def diagnostics(self, df: pd.DataFrame, test_start: pd.Timestamp) -> Dict[str, Any]:
         """

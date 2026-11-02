@@ -79,8 +79,29 @@ def test_ml_strategy_records_what_it_saw(candles):
     assert strat.last_state is None
     strat.evaluate(candles.iloc[-1000:], "EUR_USD")
     p = strat.probabilities(candles.iloc[-1000:])
-    assert strat.last_state == {"p_long": round(float(p["p_long"]), 4), "p_short": round(float(p["p_short"]), 4),
-                                "umbral": 0.5}
+    s = strat.last_state
+    assert (s["p_long"], s["p_short"], s["umbral"]) == (round(float(p["p_long"]), 4), round(float(p["p_short"]), 4), 0.5)
+    # Lo que el reporte necesita para dibujar la operación que haría aunque no haya señal
+    assert s["cierre"] == float(candles["close"].iloc[-1]) and s["atr"] > 0
+    assert (s["sl_atr"], s["tp_atr"], s["horizonte_velas"]) == (2.0, 3.0, 24)
+    for side in ("long", "short"):
+        assert len(s["factores"][side]) == 3
+        assert all(f["dato"] in strat.model.feature_columns for f in s["factores"][side])
+        aportes = [abs(f["aporte"]) for f in s["factores"][side]]
+        assert aportes == sorted(aportes, reverse=True)
+
+
+def test_explanation_adds_up_to_the_probability(candles):
+    """Los aportes de TODOS los datos más la base dan exactamente la probabilidad del modelo."""
+    import numpy as np
+
+    strat = MLStrategy.train(candles, CFG, "EUR_USD")
+    window = candles.iloc[-1000:]
+    full = strat.model.explain(strat._features(window), top=len(strat.model.feature_columns))
+    X = strat._features(window)[strat.model.feature_columns].iloc[[-1]]
+    base = strat.model.long.predict(X, pred_contrib=True)[0][-1]
+    p_long = 1 / (1 + np.exp(-(base + sum(f["aporte"] for f in full["long"]))))
+    assert p_long == pytest.approx(float(strat.probabilities(window)["p_long"]), abs=1e-3)
 
 
 def test_active_strategies_from_env_are_lowercase(monkeypatch):

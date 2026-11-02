@@ -245,14 +245,16 @@ def bar_index(index: pd.DatetimeIndex, ts) -> Optional[int]:
 
 
 def draw_position(ax, x0: float, x1: float, pair: str, buy: bool, entry: float, sl: Optional[float],
-                  tp: Optional[float], money_per_unit: Optional[float] = None):
+                  tp: Optional[float], money_per_unit: Optional[float] = None, label: Optional[str] = None,
+                  alpha: float = 0.16):
     """
     Herramienta "Posición larga/corta" de TradingView: zona de ganancia (hasta
     el TP) y de pérdida (hasta el SL) entre las velas x0 y x1, con pips y dinero.
     `money_per_unit` = USD que se ganan o pierden por cada unidad de precio movida.
+    `label` reemplaza "COMPRA"/"VENTA" (p. ej. para la operación que haría el modelo).
     """
     dg = digits(pair)
-    side = "COMPRA" if buy else "VENTA"
+    side = label or ("COMPRA" if buy else "VENTA")
     width = max(x1 - x0, 1.0)
     # Zona angosta (posición recién abierta, pegada al borde derecho): etiquetas alineadas a su
     # final, hacia la izquierda, para que no se salgan del gráfico
@@ -262,7 +264,7 @@ def draw_position(ax, x0: float, x1: float, pair: str, buy: bool, entry: float, 
         if level is None:
             continue
         lo, hi = sorted((entry, level))
-        ax.add_patch(plt.Rectangle((x0, lo), width, hi - lo, facecolor=color, alpha=0.16, edgecolor="none", zorder=1))
+        ax.add_patch(plt.Rectangle((x0, lo), width, hi - lo, facecolor=color, alpha=alpha, edgecolor="none", zorder=1))
         ax.hlines(level, x0, x0 + width, color=color, linewidth=1.3, zorder=5)
         money = f" · {'+' if color == UP else '−'}${abs(level - entry) * money_per_unit:,.0f}" if money_per_unit else ""
         ax.annotate(f"{name} {level:.{dg}f} · {move_text(pair, level - entry)}{money}",
@@ -272,7 +274,8 @@ def draw_position(ax, x0: float, x1: float, pair: str, buy: bool, entry: float, 
     ax.hlines(entry, x0, x0 + width, color=TEXT_PRIMARY, linewidth=1.2, linestyles=(0, (5, 3)), zorder=5)
     rr = (f" · Riesgo/Beneficio 1 : {abs(tp - entry) / abs(entry - sl):.2f}"
           if sl is not None and tp is not None and sl != entry else "")
-    ax.annotate(f"{side} {entry:.{dg}f}{rr}", xy=(x0 + width, entry) if narrow else (x0, entry),
+    text = f"{label}\n{entry:.{dg}f}{rr}" if label else f"{side} {entry:.{dg}f}{rr}"
+    ax.annotate(text, xy=(x0 + width, entry) if narrow else (x0, entry),
                 xytext=(-3 if narrow else 3, 3 if buy else -3), textcoords="offset points", ha="right" if narrow else "left",
                 va="bottom" if buy else "top", fontsize=8, color=TEXT_PRIMARY, fontweight="bold", zorder=9,
                 bbox=dict(boxstyle="round,pad=0.25", facecolor=SURFACE, edgecolor=GRID))

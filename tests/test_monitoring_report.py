@@ -186,6 +186,46 @@ def test_report_and_chart_are_built(with_trades):
     assert png[:8] == b"\x89PNG\r\n\x1a\n" and len(png) > 20_000
 
 
+def test_report_shows_what_the_model_would_do_without_signal():
+    data = _report_data(with_trades=False)
+    close = float(data.candles["close"].iloc[-1])
+    data.strategy_state["estrategias"]["ML_LightGBM"].update(
+        cierre=close, atr=0.001, sl_atr=2.0, tp_atr=3.0, horizonte_velas=48,
+        factores={"long": [{"dato": "dist_ema_200", "valor": -2.1, "aporte": -0.3},
+                           {"dato": "hora_sin", "valor": 0.5, "aporte": 0.1},
+                           {"dato": "hora_cos", "valor": 0.8, "aporte": 0.05}],
+                  "short": [{"dato": "ret_24", "valor": -0.004, "aporte": 0.2}]})
+    _, html, text = build_report(data)
+    # Las dos operaciones posibles, con los mismos SL/TP que una señal real (2 y 3 ATR = 20 y 30 pips)
+    assert f"si COMPRARA (41 %): stop en {close - 0.002:.5f} (20.0 pips) y objetivo en {close + 0.003:.5f} (30.0 pips)" in text
+    assert f"si VENDIERA (38 %): stop en {close + 0.002:.5f}" in text
+    assert "arriesgaría ~$101 (1 % de la cuenta) para ganar ~$152" in text and "48 velas adelante (~2 d 0 h)" in text
+    # Por qué: en palabras, y la hora del día una sola vez aunque pesen sus dos componentes
+    assert "Compra (41 %) ↓ la baja: el precio está 2.1 velas típicas debajo de la EMA 200" in text
+    assert text.count("la hora del día") == 1
+    assert "Venta (38 %) ↑ la sube: en las últimas 24 horas el precio bajó 0.40 %" in text
+    assert "Lo que más pesó en cada probabilidad" in html
+    assert plot_chart(data)[:4] == b"\x89PNG"
+
+
+def test_report_without_plan_data_still_works():
+    """Estado de un strategy-engine viejo (solo probabilidades): no hay plan ni explicación, y no falla."""
+    data = _report_data(with_trades=False)
+    _, _, text = build_report(data)
+    assert "Lo que haría" not in text and "Lo que más pesó" not in text
+
+
+def test_factor_texts():
+    from daily_report import _factor_text
+
+    assert _factor_text("ret_1", 0.001, 60) == "en la última hora el precio subió 0.10 %"
+    assert _factor_text("ret_120", -0.01, 60).startswith("en los últimos 5 días el precio bajó")
+    assert _factor_text("pos_rango_24", 0.9, 60).startswith("el precio está al 90 % del rango de las últimas 24 horas")
+    assert _factor_text("rsi_14", 28.4, 60) == "RSI 14 en 28"
+    assert _factor_text("dia_semana", 0, 60) == "el día de la semana (lunes)"
+    assert _factor_text("dato_nuevo", 1.0, 60) == "dato_nuevo"  # un dato sin traducción no rompe el reporte
+
+
 def test_combined_status_names_the_failing_pair():
     from health_check import combine_status
 

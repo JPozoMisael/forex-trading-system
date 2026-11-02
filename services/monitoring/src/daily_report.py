@@ -15,6 +15,7 @@ modelo NO los usa para decidir.
 """
 import argparse
 import io
+import math
 import os
 import sys
 from dataclasses import dataclass, field
@@ -31,9 +32,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from charts import (DOWN, DPI, EMA_COLORS, GRID, SURFACE, TEXT_PRIMARY, TEXT_SECONDARY, TIMEFRAMES, UP,
-                    bar_index as _bar_index, digits as _digits, display_name, draw_fibonacci, draw_position, fetch_recent,
-                    fibonacci_levels, move_text, plot_timeframes, price_tag, timeframe_summary)
+from charts import (DOWN, DPI, EMA_COLORS, GRID, REFERENCE, SURFACE, TEXT_PRIMARY, TEXT_SECONDARY, TIMEFRAMES, UP,
+                    bar_index as _bar_index, digits as _digits, display_name, draw_fibonacci, draw_position,
+                    duration_text, fetch_recent, fibonacci_levels, move_text, plot_timeframes, price_tag,
+                    timeframe_summary)
 
 from shared.config import GRANULARITY_MINUTES, settings
 from shared.logger import get_logger
@@ -192,6 +194,20 @@ def plot_chart(data: ReportData) -> bytes:
         draw_position(ax, (i_in if i_in is not None else len(df) - 6) - 0.5, len(df) - 0.5, data.pair,
                       str(o["direction"]).lower() == "buy", float(entry), sl, tp, _money_per_unit(o, data.pair, entry))
 
+    # Sin posición abierta: la operación que haría el modelo ahora (la de mayor probabilidad), proyectada
+    # sobre las velas que mira hacia adelante. Es lo que evalúa aunque no llegue al umbral.
+    plan = _model_plan(data.strategy_state) if data.open_orders.empty else None
+    plan_end, plan_levels = len(df) - 0.5, []
+    if plan:
+        buy = plan["p_long"] >= plan["p_short"]
+        entry = float(df["close"].iloc[-1])
+        sl, tp = _plan_levels(plan, entry, buy)
+        plan_end += int(plan.get("horizonte_velas") or 24)
+        ax.axvline(len(df) - 0.5, color=REFERENCE, linewidth=0.8, linestyle=(0, (1, 2)), zorder=1)
+        draw_position(ax, len(df) - 0.5, plan_end, data.pair, buy, entry, sl, tp,
+                      _risk_money(data) / abs(entry - sl), label=_plan_side_label(plan, buy), alpha=0.08)
+        plan_levels = [sl, tp]
+
     # Operaciones cerradas dentro de la ventana
     for _, t in data.closed_orders.iterrows():
         if pd.isna(t.get("opened_at")) or pd.isna(t.get("closed_at")):
@@ -212,6 +228,10 @@ def plot_chart(data: ReportData) -> bytes:
         for i, on in zip(x, active):
             if on:
                 ax_s.add_patch(plt.Rectangle((i - 0.5, y - 0.4), 1.0, 0.8, facecolor=GRID, edgecolor="none"))
+    if plan:  # la franja está vacía en el futuro: ahí se explica la zona del plan
+        ax_s.annotate(f"← ahora · el modelo mira\n{int(plan.get('horizonte_velas') or 24)} velas adelante →",
+                      xy=((len(df) - 0.5 + plan_end) / 2, 0.5), ha="center", va="center", fontsize=7.5,
+                      color=TEXT_SECONDARY)
     ax_s.set_ylim(-0.6, 1.6)
     ax_s.set_yticks([1, 0])
     ax_s.set_yticklabels(list(SESSIONS), fontsize=8, color=TEXT_SECONDARY)
@@ -224,9 +244,9 @@ def plot_chart(data: ReportData) -> bytes:
     dias = ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
     ax_s.set_xticklabels([f"{dias[local_index[i].weekday()]} {local_index[i].day}" for i in ticks],
                          fontsize=8, color=TEXT_SECONDARY)
-    ax.set_xlim(-1, len(df))
-    # El eje incluye SL y TP de la posición abierta aunque estén fuera del rango de las velas
-    prices = [float(df["low"].min()), float(df["high"].max())]
+    ax.set_xlim(-1, max(len(df), plan_end + 0.5))
+    # El eje incluye SL y TP de la posición abierta (o del plan) aunque estén fuera del rango de las velas
+    prices = [float(df["low"].min()), float(df["high"].max())] + plan_levels
     for col in ("stop_loss", "take_profit"):
         if col in data.open_orders:
             prices += [float(v) for v in data.open_orders[col].dropna()]
@@ -251,7 +271,8 @@ def plot_chart(data: ReportData) -> bytes:
         t.set_color(TEXT_PRIMARY)
     fig.text(0.01, 0.005, f"Días y horas en {zona()}. {sessions_local_text(data.now)}\n"
              "Fibonacci, EMAs y sesiones son contexto visual: el modelo no los usa. ▲/▼ entrada de una operación "
-             "cerrada, X salida.", fontsize=7.5, color=TEXT_SECONDARY)
+             "cerrada, X salida." + (" Zona clara a la derecha: la operación que haría el modelo si entrara ahora."
+                                    if plan else ""), fontsize=7.5, color=TEXT_SECONDARY)
     fig.subplots_adjust(left=0.08, right=0.84, top=0.93, bottom=0.11)
 
     buf = io.BytesIO()
@@ -306,6 +327,114 @@ def _model_view(state: Optional[Dict[str, Any]], gran_minutes: int = 60) -> Tupl
                  "pero el sistema no opera aquí.")
         short = "no opera"
     return short, text
+
+
+def _model_plan(state: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Estado del modelo con lo necesario para dibujar su plan (p, ATR, SL/TP, horizonte), o None."""
+    for s in ((state or {}).get("estrategias") or {}).values():
+        if "p_long" in s and s.get("atr") and s.get("sl_atr") and s.get("tp_atr"):
+            return s
+    return None
+
+
+def _plan_levels(plan: Dict[str, Any], entry: float, buy: bool) -> Tuple[float, float]:
+    """(SL, TP) que pondría el modelo: los mismos múltiplos de ATR que una señal real."""
+    sign = 1 if buy else -1
+    return entry - sign * plan["sl_atr"] * plan["atr"], entry + sign * plan["tp_atr"] * plan["atr"]
+
+
+def _risk_money(data: ReportData) -> float:
+    """Dólares que arriesgaría una operación: RISK_PER_TRADE_PCT del balance."""
+    balance = float((data.account or {}).get("balance") or data.initial_balance)
+    return balance * settings.risk_per_trade_pct / 100
+
+
+def _plan_side_label(plan: Dict[str, Any], buy: bool) -> str:
+    p = plan["p_long" if buy else "p_short"]
+    if p >= plan["umbral"]:
+        return f"SEÑAL DE {'COMPRA' if buy else 'VENTA'} · {p * 100:.0f} %"
+    return f"SI {'COMPRARA' if buy else 'VENDIERA'} AHORA · {p * 100:.0f} % (necesita {plan['umbral'] * 100:.0f} %)"
+
+
+def _plan_text(plan: Dict[str, Any], pair: str, entry: float, risk: float, gran_minutes: int) -> str:
+    """Las dos operaciones posibles en palabras, con stop, objetivo y dinero."""
+    dg = _digits(pair)
+    gain = risk * plan["tp_atr"] / plan["sl_atr"]
+    parts = []
+    for buy in (True, False):
+        sl, tp = _plan_levels(plan, entry, buy)
+        p = plan["p_long" if buy else "p_short"]
+        parts.append(f"si {'COMPRARA' if buy else 'VENDIERA'} ({p * 100:.0f} %): stop en {sl:.{dg}f} "
+                     f"({move_text(pair, sl - entry)}) y objetivo en {tp:.{dg}f} ({move_text(pair, tp - entry)})")
+    horizon = int(plan.get("horizonte_velas") or 0)
+    look = f" Mira hasta {horizon} velas adelante (~{duration_text(horizon * gran_minutes)})." if horizon else ""
+    return (f"Lo que haría con el precio de ahora ({entry:.{dg}f}): {parts[0]}; {parts[1]}. En cualquiera de las dos "
+            f"arriesgaría ~${risk:,.0f} ({settings.risk_per_trade_pct:g} % de la cuenta) para ganar ~${gain:,.0f}.{look} "
+            f"En el gráfico va la de mayor probabilidad.")
+
+
+_DIAS_SEMANA = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+
+
+def _factor_text(dato: str, v: float, gran_minutes: int) -> str:
+    """Un dato del modelo explicado como lo diría un trader. 'Vela típica' = ATR de 14 velas."""
+    def periodo(n):
+        """'la última hora', 'las últimas 24 horas', 'los últimos 5 días'."""
+        m = n * gran_minutes
+        if m >= 2880 and m % 1440 == 0:
+            return f"los últimos {m // 1440} días"
+        if m % 60 == 0:
+            return "la última hora" if m == 60 else f"las últimas {m // 60} horas"
+        return f"los últimos {m} minutos"
+
+    def lado(x):
+        return "encima" if x >= 0 else "debajo"
+
+    if dato.startswith("ret_"):
+        pct = (math.exp(v) - 1) * 100
+        return f"en {periodo(int(dato.split('_')[1]))} el precio {'subió' if pct >= 0 else 'bajó'} {abs(pct):.2f} %"
+    if dato.startswith("dist_ema_"):
+        return f"el precio está {abs(v):.1f} velas típicas {lado(v)} de la EMA {dato.split('_')[-1]}"
+    if dato.startswith("pendiente_ema_"):
+        return (f"la EMA {dato.split('_')[-1]} {'subió' if v >= 0 else 'bajó'} {abs(v):.1f} velas típicas "
+                f"en {periodo(24)}")
+    texts = {
+        "atr_pct": lambda: f"la vela típica mueve el {v * 100:.2f} % del precio (volatilidad)",
+        "rsi_14": lambda: f"RSI 14 en {v:.0f}",
+        "vol_24": lambda: f"la volatilidad de {periodo(24)}",
+        "vol_120": lambda: f"la volatilidad de {periodo(120)}",
+        "vol_ratio": lambda: f"la volatilidad de {periodo(24)} es {v:.1f} veces la de {periodo(120)}",
+        "range_atr": lambda: f"la última vela midió {v:.1f} velas típicas de mínimo a máximo",
+        "body_atr": lambda: f"la última vela fue {'alcista' if v >= 0 else 'bajista'}, con cuerpo de {abs(v):.1f} "
+                            f"velas típicas",
+        "pos_rango_24": lambda: f"el precio está al {v * 100:.0f} % del rango de {periodo(24)} "
+                                f"(0 % = mínimo, 100 % = máximo)",
+        "hora_sin": lambda: "la hora del día",
+        "hora_cos": lambda: "la hora del día",
+        "dia_semana": lambda: f"el día de la semana ({_DIAS_SEMANA[int(v) % 7]})",
+        "dist_max_120": lambda: f"el precio está {abs(v):.1f} velas típicas debajo del máximo de {periodo(120)}",
+        "dist_min_120": lambda: f"el precio está {abs(v):.1f} velas típicas encima del mínimo de {periodo(120)}",
+        "regimen_atr": lambda: f"la volatilidad está a {v:.1f} veces su promedio",
+        "pos_rango_dia_anterior": lambda: f"el precio está al {v * 100:.0f} % del rango de ayer",
+        "dist_max_dia_anterior": lambda: f"el precio está {abs(v):.1f} velas típicas {lado(v)} del máximo de ayer",
+        "dist_min_dia_anterior": lambda: f"el precio está {abs(v):.1f} velas típicas {lado(v)} del mínimo de ayer",
+    }
+    return texts[dato]() if dato in texts else dato
+
+
+def _why_rows(plan: Dict[str, Any], gran_minutes: int) -> List[List[str]]:
+    """Por lado, los datos que más movieron la probabilidad: [lado, efecto, dato en palabras]."""
+    rows = []
+    for side, name in (("long", "Compra"), ("short", "Venta")):
+        seen = set()
+        for f in (plan.get("factores") or {}).get(side, []):
+            text = _factor_text(f["dato"], float(f["valor"]), gran_minutes)
+            if text in seen:  # hora_sin y hora_cos son el mismo dato para el usuario
+                continue
+            seen.add(text)
+            rows.append([f"{name} ({plan['p_' + side] * 100:.0f} %)", "↑ la sube" if f["aporte"] > 0 else "↓ la baja",
+                         text])
+    return rows
 
 
 def _ref_text(pair: str, refs: Dict[str, Dict[str, float]]) -> str:
@@ -367,7 +496,11 @@ def _instrument_section(data: ReportData, refs: Optional[Dict] = None) -> Dict[s
     if model_short.startswith("SEÑAL") and open_rows:
         model_detail += " Como ya hay una posición abierta en este instrumento, no se abre otra."
     ref = _ref_text(data.pair, refs if refs is not None else backtest_refs())
+    plan = _model_plan(data.strategy_state)
+    plan_text = _plan_text(plan, data.pair, price, _risk_money(data), gran_minutes) if plan else ""
+    why_rows = _why_rows(plan, gran_minutes) if plan else []
     return {"pair": data.pair, "name": display_name(data.pair), "short": model_short, "detail": model_detail, "ref": ref,
+            "plan_text": plan_text, "why_rows": why_rows,
             "close": px(price), "tf_rows": timeframe_rows(data), "has_tf_chart": bool(data.timeframes),
             "open_rows": open_rows, "open_texts": open_texts, "closed_rows": closed_rows}
 
@@ -464,6 +597,9 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = ()) -> Tuple[st
     lines += ["", sessions_now]
     for s in sections:
         lines += ["", f"== {s['name']} · precio {s['close']} ==", f"MODELO: {s['detail']}"] + ([f"  {s['ref']}"] if s["ref"] else [])
+        lines += [f"  {s['plan_text']}"] if s["plan_text"] else []
+        if s["why_rows"]:
+            lines += ["  Lo que más pesó en cada probabilidad:"] + [f"    {r[0]} {r[1]}: {r[2]}" for r in s["why_rows"]]
         lines += [f"  {r[0]}: tendencia {r[1]}, vela típica {r[2]}, rango {r[3]}, precio {r[4]}" for r in s["tf_rows"]]
         lines += [f"  POSICIÓN: {t}" for t in s["open_texts"]] or ["  Sin posiciones abiertas."]
         lines += [f"  Cerrada (24 h): {' | '.join(r)}" for r in s["closed_rows"]]
@@ -498,11 +634,17 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = ()) -> Tuple[st
                                s["tf_rows"])
                        + (f"<img src=\"cid:tf_{s['pair']}\" alt=\"{s['name']} en varias temporalidades\" "
                           f"style=\"width:100%;max-width:900px;margin-top:8px\">" if s["has_tf_chart"] else ""))
+        why_html = ""
+        if s["why_rows"]:
+            why_html = (f"<p {p}><b>Lo que más pesó en cada probabilidad</b> (los 3 datos de las últimas velas que más "
+                        f"la movieron)</p>" + table(["Operación", "Efecto", "Dato"], s["why_rows"]))
         parts.append(f"""
 <h2 {h2}>{s['name']} · precio {s['close']}</h2>
 <p {p}>{s['detail']}</p>
 {f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:0 0 8px'>{s['ref']}</p>" if s['ref'] else ""}
+{f"<p {p}>{s['plan_text']}</p>" if s['plan_text'] else ""}
 <img src="cid:grafico_{s['pair']}" alt="Gráfico de {s['name']}" style="width:100%;max-width:900px">
+{why_html}
 {open_html}
 {closed_html}
 {tf_html}""")

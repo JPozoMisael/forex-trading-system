@@ -5,6 +5,17 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-11-02 ("Lo que ve el modelo" en el reporte) · DESKTOP-QQ3KOCN
+
+- **El reporte muestra qué haría el modelo aunque no haya señal:**
+  - En el gráfico de H1, a la derecha de la última vela, se dibuja la operación de mayor probabilidad: entrada, stop, objetivo y dinero, a lo largo de las 48 velas que mira el modelo. Lleva la etiqueta "SI COMPRARA AHORA · 39 % (necesita 50 %)".
+  - En texto aparecen las dos operaciones posibles (compra y venta) con su stop y su objetivo, más lo que arriesgaría y lo que ganaría.
+  - "Lo que más pesó": para cada probabilidad, los 3 datos que más la movieron, en palabras ("el precio está 2.1 velas típicas debajo de la EMA 200"). Es la descomposición exacta de LightGBM (`TradeModel.explain`, `pred_contrib`).
+- El strategy-engine guarda en `state:strategy:<PAR>` el ATR, los múltiplos de SL/TP, el horizonte y los factores. Solo lo hace en vivo; el backtest no cambia ni se vuelve más lento. Si falta esa información (strategy-engine sin actualizar), el reporte sale como antes.
+- Las noticias del Banco de Australia (y dos del Banco de Inglaterra) ahora salen en español.
+- Discutido y **pendiente**: probar un filtro de temporalidades mayores ("solo comprar si el diario y el H4 no son bajistas"). Hay que pre-registrarlo en `config.yaml` antes de correrlo, porque cuenta como una combinación más. Darle más datos de temporalidades al modelo ya se probó (`v2_extendido`, −41 %).
+- 150 tests pasan. Hay que redesplegar en Dokploy para que el servidor lo use.
+
 ## 2026-10-31 (preparación de equipo nuevo) · DESKTOP-QQ3KOCN
 
 - Primera sesión en esta computadora: se creó `.venv` con Python 3.13.14 y se instaló `requirements-local.txt`. Las 20 dependencias están bien.

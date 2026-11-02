@@ -5,7 +5,7 @@ Modelo de trading: dos clasificadores LightGBM sobre las mismas features.
 """
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import joblib
 import pandas as pd
@@ -51,6 +51,21 @@ class TradeModel:
             {"p_long": self.long.predict_proba(X)[:, 1], "p_short": self.short.predict_proba(X)[:, 1]},
             index=features.index,
         )
+
+    def explain(self, features: pd.DataFrame, top: int = 3) -> Dict[str, List[Dict[str, float]]]:
+        """
+        Los `top` datos que más movieron la probabilidad de la ÚLTIMA fila, por
+        lado: nombre, valor y aporte (en log-odds; > 0 la sube, < 0 la baja).
+        Es la descomposición exacta de LightGBM (pred_contrib), no una estimación.
+        """
+        X = features[self.feature_columns].iloc[[-1]]
+        out = {}
+        for side, clf in (("long", self.long), ("short", self.short)):
+            contrib = clf.predict(X, pred_contrib=True)[0][:-1]  # la última columna es la base
+            order = sorted(range(len(contrib)), key=lambda i: -abs(contrib[i]))[:top]
+            out[side] = [{"dato": self.feature_columns[i], "valor": round(float(X.iloc[0, i]), 6),
+                          "aporte": round(float(contrib[i]), 4)} for i in order]
+        return out
 
     def save(self, path: Path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
