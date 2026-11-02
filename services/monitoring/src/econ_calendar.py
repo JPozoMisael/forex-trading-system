@@ -46,7 +46,12 @@ TITLES_ES = {
     "BOJ Press Conference": "Conferencia de prensa del Banco de Japón",
     "BOJ Outlook Report": "Informe de perspectivas del Banco de Japón",
     "Official Bank Rate": "Decisión de tasas del Banco de Inglaterra",
+    "Monetary Policy Summary": "Resumen de política monetaria del Banco de Inglaterra",
+    "MPC Official Bank Rate Votes": "Votos del Banco de Inglaterra sobre las tasas",
     "Cash Rate": "Decisión de tasas del Banco de Australia",
+    "RBA Rate Statement": "Comunicado de tasas del Banco de Australia",
+    "RBA Monetary Policy Statement": "Comunicado de política monetaria del Banco de Australia",
+    "RBA Press Conference": "Conferencia de prensa del Banco de Australia",
     "Employment Change": "Cambio en el empleo",
 }
 
