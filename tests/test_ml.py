@@ -29,7 +29,7 @@ def candles():
     return df
 
 
-@pytest.mark.parametrize("conjunto", ["base", "extendido"])
+@pytest.mark.parametrize("conjunto", ["base", "extendido", "tradingview"])
 def test_features_do_not_change_when_future_changes(candles, conjunto):
     full = build_features(candles, conjunto=conjunto)
     cut = 2000
@@ -39,7 +39,7 @@ def test_features_do_not_change_when_future_changes(candles, conjunto):
     pd.testing.assert_frame_equal(full.iloc[:cut], past_only.iloc[:cut])
 
 
-@pytest.mark.parametrize("conjunto", ["base", "extendido"])
+@pytest.mark.parametrize("conjunto", ["base", "extendido", "tradingview"])
 def test_features_of_a_bar_only_need_history_up_to_it(candles, conjunto):
     full = build_features(candles, conjunto=conjunto)
     truncated = build_features(candles.iloc[:1500], conjunto=conjunto)

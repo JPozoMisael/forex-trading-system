@@ -20,7 +20,14 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
   - **Resultado: el modelo casi no separa horas buenas de malas.** Por debajo del 50 %, el % que toca el objetivo es casi plano: EUR_USD compra 35 % en todos los tramos de menos de 30 % a 45 %; USD_JPY entre 36 y 39 %. Los tramos de 50 % o más tienen entre 4 y 204 horas seguidas (correlacionadas) y van en direcciones opuestas.
   - En el oro, las compras rinden ~40 % en todos los tramos por la subida del oro, no por el modelo. Las ventas pierden.
   - **No hay operaciones "casi señal" que se estén dejando pasar.** Nuevo problema P16 en el diagnóstico.
-- 153 tests pasan.
+- **Estudio de patrones con herramientas de TradingView** (`backtesting/src/run_patrones.py`, `ml/tradingview.py`, informe `reports/20261103_0313_patrones/`):
+  - 17 herramientas como datos, todas solo con velas cerradas: tendencia H1/H4/diario y su alineación, Fibonacci (dirección, retroceso, distancia al nivel), RSI, MACD, Bollinger (%B y ancho), estocástico, sesión, distancia al máximo y mínimo de ayer, envolventes y martillos. Nuevo conjunto `features: tradingview`.
+  - Solo periodo de desarrollo (2012–2023), dividido en dos épocas. Un patrón cuenta si gana o pierde ≥ 3 puntos frente a lo normal en las dos épocas; se compara con un control de azar (futuro desordenado).
+  - **Resultado: 0 patrones se repiten en EUR_USD, USD_JPY y XAU_USD** (el azar da 0–1).
+  - El modelo con TradingView **no separa mejor** que el actual: el 10 % de horas que ve mejor gana casi lo mismo que el 10 % que ve peor (diferencias de −3 a +6 puntos, con 34–37 % de base).
+  - Lo que más usa el modelo es volatilidad y día de la semana; de TradingView, la tendencia diaria y el retroceso de Fibonacci, pero sin mejorar el resultado.
+  - Conclusión: con este planteamiento (stop 2 ATR, objetivo 3 ATR, 48 velas de H1), las herramientas clásicas no anticipan qué operaciones ganarán.
+- 163 tests pasan.
 
 ## 2026-10-31 (preparación de equipo nuevo) · DESKTOP-QQ3KOCN
 

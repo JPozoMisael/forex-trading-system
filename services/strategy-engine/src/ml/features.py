@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from indicators import calculate_atr, calculate_ema, calculate_rsi
+from ml.tradingview import TV_WARMUP_BARS, tradingview_features, tv_column_names
 
 # Velas iniciales en las que la EMA 200 y las ventanas largas aún no son fiables
 WARMUP_BARS = 250
@@ -33,6 +34,8 @@ EXTENDED_COLUMNS = [
 FEATURE_SETS = {
     "base": (FEATURE_COLUMNS, WARMUP_BARS),
     "extendido": (FEATURE_COLUMNS + EXTENDED_COLUMNS, 600),
+    # Las de base más las herramientas de TradingView (ml/tradingview.py)
+    "tradingview": (FEATURE_COLUMNS + tv_column_names(), TV_WARMUP_BARS),
 }
 
 
@@ -48,6 +51,8 @@ def build_features(df: pd.DataFrame, atr_period: int = 14, conjunto: str = "base
     f = _base_features(df, atr_period)
     if conjunto == "extendido":
         f = f.join(_extended_features(df, atr_period))
+    elif conjunto == "tradingview":
+        f = f.join(tradingview_features(df, atr_period))
     return f[columns].replace([np.inf, -np.inf], np.nan)
 
 
