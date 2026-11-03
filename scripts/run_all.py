@@ -56,6 +56,29 @@ def _start(name: str) -> subprocess.Popen:
     return proc
 
 
+def _apply_schema(timeout: int = 120) -> bool:
+    """
+    Aplica infra/postgres/init.sql antes de arrancar (scripts/init_db.py): es
+    idempotente y va en una sola transacción, así que un redeploy con tablas
+    nuevas no necesita ningún paso a mano. Si falla, se avisa y se arranca
+    igual (el risk-manager ya rechaza todo si la BD no responde).
+    """
+    try:
+        res = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "init_db.py")], cwd=ROOT,
+                             env=dict(os.environ, PYTHONPATH=ROOT), capture_output=True, text=True,
+                             encoding="utf-8", errors="replace", timeout=timeout)
+    except Exception as e:
+        _log(f"⚠️ No se pudo aplicar el esquema de la BD ({e}); se arranca igual")
+        return False
+    for line in (res.stdout + res.stderr).strip().splitlines()[-8:]:
+        _log(f"   init_db | {line}")
+    if res.returncode != 0:
+        _log(f"⚠️ init_db.py terminó con código {res.returncode}; se arranca igual")
+        return False
+    _log("✅ Esquema de la BD al día")
+    return True
+
+
 def _handle_shutdown(signum, frame):
     global running
     running = False
@@ -71,6 +94,8 @@ def main():
     if unknown:
         _log(f"❌ Servicios desconocidos: {unknown}")
         sys.exit(1)
+
+    _apply_schema()
 
     procs = {}
     restarts = {s: 0 for s in services}
