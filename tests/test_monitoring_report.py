@@ -264,6 +264,7 @@ def test_factor_texts():
     assert _factor_text("ret_120", -0.01, 60).startswith("en los últimos 5 días el precio bajó")
     assert _factor_text("pos_rango_24", 0.9, 60).startswith("el precio está al 90 % del rango de las últimas 24 horas")
     assert _factor_text("rsi_14", 28.4, 60) == "RSI 14 en 28"
+    assert _factor_text("vol_24", 0.0008, 60) == "la volatilidad de las últimas 24 horas (el precio se mueve ~0.08 % por vela)"
     assert _factor_text("dia_semana", 0, 60) == "el día de la semana (lunes)"
     assert _factor_text("dato_nuevo", 1.0, 60) == "dato_nuevo"  # un dato sin traducción no rompe el reporte
 

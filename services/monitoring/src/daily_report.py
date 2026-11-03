@@ -417,8 +417,8 @@ def _factor_text(dato: str, v: float, gran_minutes: int) -> str:
     texts = {
         "atr_pct": lambda: f"la vela típica mueve el {v * 100:.2f} % del precio (volatilidad)",
         "rsi_14": lambda: f"RSI 14 en {v:.0f}",
-        "vol_24": lambda: f"la volatilidad de {periodo(24)}",
-        "vol_120": lambda: f"la volatilidad de {periodo(120)}",
+        "vol_24": lambda: f"la volatilidad de {periodo(24)} (el precio se mueve ~{v * 100:.2f} % por vela)",
+        "vol_120": lambda: f"la volatilidad de {periodo(120)} (el precio se mueve ~{v * 100:.2f} % por vela)",
         "vol_ratio": lambda: f"la volatilidad de {periodo(24)} es {v:.1f} veces la de {periodo(120)}",
         "range_atr": lambda: f"la última vela midió {v:.1f} velas típicas de mínimo a máximo",
         "body_atr": lambda: f"la última vela fue {'alcista' if v >= 0 else 'bajista'}, con cuerpo de {abs(v):.1f} "

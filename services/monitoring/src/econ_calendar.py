@@ -53,6 +53,8 @@ TITLES_ES = {
     "RBA Monetary Policy Statement": "Comunicado de política monetaria del Banco de Australia",
     "RBA Press Conference": "Conferencia de prensa del Banco de Australia",
     "Employment Change": "Cambio en el empleo",
+    "Congressional Elections": "Elecciones legislativas de EE. UU.",
+    "Presidential Election": "Elección presidencial de EE. UU.",
 }
 
 IMPACT_ES = {"High": "alto", "Medium": "medio", "Low": "bajo"}
