@@ -15,6 +15,12 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 - Las noticias del Banco de Australia (y dos del Banco de Inglaterra) ahora salen en español.
 - Discutido y **pendiente**: probar un filtro de temporalidades mayores ("solo comprar si el diario y el H4 no son bajistas"). Hay que pre-registrarlo en `config.yaml` antes de correrlo, porque cuenta como una combinación más. Darle más datos de temporalidades al modelo ya se probó (`v2_extendido`, −41 %).
 - 150 tests pasan. Hay que redesplegar en Dokploy para que el servidor lo use.
+- **Calibración** (`backtesting/src/run_calibracion.py`, informe `reports/20261103_0244_calibracion.md`, no versionado):
+  - Para cada hora de la prueba final: qué probabilidad dio el modelo de ese momento y si la compra o la venta tocaron primero el objetivo, el stop o ninguno. Para separar esos tres casos se agregó `triple_barrier_outcomes` en `ml/labels.py`; la etiqueta del modelo no cambia.
+  - **Resultado: el modelo casi no separa horas buenas de malas.** Por debajo del 50 %, el % que toca el objetivo es casi plano: EUR_USD compra 35 % en todos los tramos de menos de 30 % a 45 %; USD_JPY entre 36 y 39 %. Los tramos de 50 % o más tienen entre 4 y 204 horas seguidas (correlacionadas) y van en direcciones opuestas.
+  - En el oro, las compras rinden ~40 % en todos los tramos por la subida del oro, no por el modelo. Las ventas pierden.
+  - **No hay operaciones "casi señal" que se estén dejando pasar.** Nuevo problema P16 en el diagnóstico.
+- 153 tests pasan.
 
 ## 2026-10-31 (preparación de equipo nuevo) · DESKTOP-QQ3KOCN
 

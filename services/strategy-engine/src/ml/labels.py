@@ -27,6 +27,56 @@ def triple_barrier_labels(
     spread_pips: float = 0.0,
     slippage_pips: float = 0.0,
 ) -> pd.DataFrame:
+    first = first_hits(df, atr, horizon, sl_atr, tp_atr, pair, spread_pips, slippage_pips)
+    long_win = (first["long_tp"] < first["long_sl"]) & (first["long_tp"] <= horizon)
+    short_win = (first["short_tp"] < first["short_sl"]) & (first["short_tp"] <= horizon)
+
+    labels = pd.DataFrame({"long": long_win.astype(float), "short": short_win.astype(float)}, index=df.index)
+    return _drop_incomplete(labels, atr, horizon)
+
+
+def triple_barrier_outcomes(
+    df: pd.DataFrame,
+    atr: pd.Series,
+    horizon: int,
+    sl_atr: float,
+    tp_atr: float,
+    pair: str,
+    spread_pips: float = 0.0,
+    slippage_pips: float = 0.0,
+) -> pd.DataFrame:
+    """
+    Como triple_barrier_labels, pero separando lo que la etiqueta junta en 0:
+    "tp" (tocó el TP primero), "sl" (tocó el SL primero, o ambos en la misma
+    vela) y "ninguno" (no tocó ninguno en el horizonte). NaN sin futuro completo.
+    """
+    first = first_hits(df, atr, horizon, sl_atr, tp_atr, pair, spread_pips, slippage_pips)
+    out = {}
+    for side in ("long", "short"):
+        tp, sl = first[f"{side}_tp"], first[f"{side}_sl"]
+        out[side] = np.where((tp < sl) & (tp <= horizon), "tp", np.where(sl <= horizon, "sl", "ninguno"))
+    outcomes = pd.DataFrame(out, index=df.index).astype(object)
+    return _drop_incomplete(outcomes, atr, horizon)
+
+
+def _drop_incomplete(frame: pd.DataFrame, atr: pd.Series, horizon: int) -> pd.DataFrame:
+    n = len(frame)
+    incomplete = np.arange(n) >= n - horizon
+    frame.loc[incomplete | np.isnan(atr.to_numpy(dtype=float)), :] = np.nan
+    return frame
+
+
+def first_hits(
+    df: pd.DataFrame,
+    atr: pd.Series,
+    horizon: int,
+    sl_atr: float,
+    tp_atr: float,
+    pair: str,
+    spread_pips: float = 0.0,
+    slippage_pips: float = 0.0,
+) -> dict:
+    """Para cada vela, en qué vela posterior (1..horizonte) toca cada barrera; horizonte + 1 = nunca."""
     pip = get_pip_size(pair)
     hs, slip = spread_pips * pip / 2, slippage_pips * pip
     o, h, l = (df[k].to_numpy(dtype=float) for k in ("open", "high", "low"))
@@ -56,11 +106,4 @@ def triple_barrier_labels(
         for name, hit in hits.items():
             newly = hit & (first[name] == never)
             first[name][newly] = k
-
-    long_win = (first["long_tp"] < first["long_sl"]) & (first["long_tp"] <= horizon)
-    short_win = (first["short_tp"] < first["short_sl"]) & (first["short_tp"] <= horizon)
-
-    labels = pd.DataFrame({"long": long_win.astype(float), "short": short_win.astype(float)}, index=df.index)
-    incomplete = np.arange(n) >= n - horizon
-    labels.loc[incomplete | np.isnan(a), :] = np.nan
-    return labels
+    return first

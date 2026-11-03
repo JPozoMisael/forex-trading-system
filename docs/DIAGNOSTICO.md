@@ -38,6 +38,7 @@
 | P13 | Media | En Dokploy `models/` no persiste: cada redeploy reentrena (~5 min sin análisis) y el modelo cambia un poco | Volumen en `/app/models` |
 | P14 | Media | Dinero real con XM exige MT5, que solo corre en Windows; el servidor de Dokploy es Linux | Antes de operar real: VPS Windows con MT5 o un broker con API que acepte Ecuador |
 | P15 | Baja | Sin reentrenamiento programado: el modelo se queda fijo | Reentrenar cada 6 meses (como en la validación walk-forward) y registrar cada versión |
+| P16 | **Alta** | El modelo v1 **no está calibrado**: en la prueba final, el % de horas que tocan el objetivo es casi igual en todos los tramos de probabilidad por debajo del 50 % (EUR_USD: 35 % tanto si dijo 27 % como 42 %). Sus probabilidades apenas separan horas buenas de malas, y los tramos de 50 % o más tienen muy pocas horas para concluir nada. En el oro, cualquier compra rindió ~40 % por la subida del oro, no por el modelo (`reports/20261103_0244_calibracion.md`) | Seguir tomando el paper trading como comprobación, no como ventaja. Mejorar la capacidad de separar (otros datos u otro objetivo) con protocolo pre-registrado; `run_calibracion.py` sirve para medir cada versión |
 | P9 | Baja | `fakeredis` está en requirements pero no siempre instalado, así que `test_bus.py` se omite | `pip install -r requirements-local.txt` |
 
 ## 3. Riesgos a vigilar
