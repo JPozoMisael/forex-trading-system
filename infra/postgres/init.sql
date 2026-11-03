@@ -1,5 +1,5 @@
 -- =====================================================================================
---  Esquema de base de datos del Sistema de Trading Forex · versión 2 (2026-10-26)
+--  Esquema de base de datos del Sistema de Trading Forex · versión 3 (2026-11-03)
 --
 --  Requisitos: PostgreSQL 13+. TimescaleDB es OPCIONAL: si la extensión está disponible
 --  `candles` se convierte en hypertable; si no, queda como tabla normal y todo funciona igual.
@@ -245,6 +245,31 @@ CREATE INDEX IF NOT EXISTS idx_risk_events_time      ON risk_events (timestamp D
 CREATE INDEX IF NOT EXISTS idx_risk_events_type_time ON risk_events (type, timestamp DESC);
 
 -- -------------------------------------------------------------------------------------
+-- 6b. model_evaluations — lo que vio el modelo en CADA vela, opere o no (escribe:
+--     strategy-engine · lee: monitoring). Con esto el reporte muestra qué habría pasado
+--     con las operaciones que no tomó y si sus probabilidades se cumplen en vivo.
+--     Sin CHECK: es solo registro; un valor raro nunca debe frenar la evaluación.
+-- -------------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS model_evaluations (
+    pair            TEXT             NOT NULL,
+    granularity     TEXT             NOT NULL,
+    timestamp       TIMESTAMPTZ      NOT NULL,              -- apertura de la vela evaluada, UTC
+    strategy_name   TEXT             NOT NULL,
+    p_long          DOUBLE PRECISION,
+    p_short         DOUBLE PRECISION,
+    umbral          DOUBLE PRECISION,
+    close           DOUBLE PRECISION,                      -- cierre de la vela evaluada
+    atr             DOUBLE PRECISION,
+    sl_atr          DOUBLE PRECISION,
+    tp_atr          DOUBLE PRECISION,
+    horizonte_velas INTEGER,
+    senal           TEXT,                                  -- buy | sell | NULL (no llegó al umbral)
+    factores        JSONB,                                 -- los datos que más pesaron (TradeModel.explain)
+    created_at      TIMESTAMPTZ      NOT NULL DEFAULT now(),
+    PRIMARY KEY (pair, granularity, timestamp, strategy_name)
+);
+
+-- -------------------------------------------------------------------------------------
 -- 7. backtest_runs — cada corrida de backtest/validación con su veredicto (fase 2 del plan).
 --    Guarda lo necesario para reproducirla: datos, periodo, parámetros y commit del código.
 -- -------------------------------------------------------------------------------------
@@ -409,4 +434,7 @@ FROM backtest_runs;
 -- -------------------------------------------------------------------------------------
 INSERT INTO schema_version (version, description)
 VALUES (2, 'Esquema v2: TimescaleDB opcional, restricciones, R por orden, tablas de cuenta, riesgo y backtest, vistas')
+ON CONFLICT (version) DO NOTHING;
+INSERT INTO schema_version (version, description)
+VALUES (3, 'model_evaluations: lo que vio el modelo en cada vela, para el repaso del reporte')
 ON CONFLICT (version) DO NOTHING;

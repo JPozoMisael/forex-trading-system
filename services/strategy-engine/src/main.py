@@ -159,6 +159,7 @@ def main():
                 try:
                     sig = strat.evaluate(df.iloc[-strat.lookback_window:], pair=pair)
                     states[strat.name] = dict(strat.last_state or {}, senal=sig.direction.value if sig else None)
+                    publisher.save_evaluation(pair, candle.granularity, candle.timestamp, strat.name, states[strat.name])
                     if sig:
                         log.info(f"🔥 Señal detectada por [{strat.name}] en {pair}: {sig.direction.value.upper()} SL={sig.stop_loss} TP={sig.take_profit}")
                         publisher.publish(sig)

@@ -215,6 +215,39 @@ def test_report_without_plan_data_still_works():
     assert "Lo que haría" not in text and "Lo que más pesó" not in text
 
 
+def test_review_report_lists_what_would_have_happened():
+    data = _report_data(with_trades=False)
+    c = data.candles
+    evals = pd.DataFrame([{"timestamp": c.index[-i], "p_long": 0.45, "p_short": 0.30, "umbral": 0.5,
+                           "close": float(c["close"].iloc[-i]), "atr": 0.0005, "sl_atr": 2.0, "tp_atr": 3.0,
+                           "horizonte_velas": 48, "senal": None} for i in (20, 10, 3)])
+    data.review, data.evaluations = True, evals
+    subject, html, text = build_report(data)
+    assert "Repaso de las últimas 24 h" in html and "De 3 horas analizadas" in html
+    review_part = html.split("Repaso de las últimas 24 h")[1].split("</table>")[0]
+    assert review_part.count("<tr>") == 4  # cabecera + 3 horas
+    assert any(mark in review_part for mark in ("✓ objetivo", "✗ stop", "⏳ en curso"))
+    assert "REPASO 24 h: De 3 horas analizadas" in text
+    assert "¿Se cumplen las probabilidades del modelo? (acumulado en vivo)" in html
+    assert text.rstrip().endswith("no se envían órdenes a ningún broker.")  # el acumulado va antes del cierre
+
+
+def test_review_without_saved_evaluations_says_so():
+    data = _report_data(with_trades=False)
+    data.review = True
+    _, html, _ = build_report(data)
+    assert "Todavía no hay evaluaciones guardadas" in html
+    _, html, _ = build_report(_report_data(with_trades=False))  # reporte sin repaso (01:30)
+    assert "Repaso de las últimas 24 h" not in html
+
+
+def test_review_only_in_the_configured_report():
+    from daily_report import review_due
+
+    assert review_due(datetime(2026, 11, 3, 13, 5, tzinfo=UTC), ["08:00"])       # 8:05 en Ecuador
+    assert not review_due(datetime(2026, 11, 3, 6, 35, tzinfo=UTC), ["08:00"])   # 1:35 en Ecuador
+
+
 def test_factor_texts():
     from daily_report import _factor_text
 

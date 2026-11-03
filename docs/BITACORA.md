@@ -28,6 +28,14 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
   - Lo que más usa el modelo es volatilidad y día de la semana; de TradingView, la tendencia diaria y el retroceso de Fibonacci, pero sin mejorar el resultado.
   - Conclusión: con este planteamiento (stop 2 ATR, objetivo 3 ATR, 48 velas de H1), las herramientas clásicas no anticipan qué operaciones ganarán.
 - 163 tests pasan.
+- **Repaso diario "qué habría pasado"** (pedido del usuario):
+  - El strategy-engine guarda cada evaluación horaria en la tabla nueva `model_evaluations` (esquema **v3**): probabilidades, precio, ATR, SL/TP, horizonte, señal y factores.
+  - El reporte de las 8:00 (`REPORT_REVIEW_TIMES`) trae por instrumento la lista de las últimas 24 h. En cada hora: probabilidad y resultado de la compra y la venta (✓ objetivo, ✗ stop, ⏳ en curso) y si el sistema operó. También trae el acumulado en vivo por tramo de probabilidad.
+  - La resolución usa las mismas reglas que el objetivo de entrenamiento (`services/monitoring/src/review.py`).
+  - **Para activarlo en el servidor hay que correr `python /app/scripts/init_db.py` después del redeploy.** Sin eso, el reporte sale igual y avisa que faltan evaluaciones. `init.sql` v3 no se probó contra Postgres en DESKTOP-QQ3KOCN (sin Docker).
+  - El modelo **no aprende solo** de esto: los registros sirven para medirlo en vivo y para reentrenarlo después (P15).
+- Pendiente: aprobación de los 4 setups de trader (Fibonacci, EMA 50, ruptura del máximo de ayer en Londres, Bollinger+RSI) antes de pre-registrarlos.
+- 173 tests pasan.
 
 ## 2026-10-31 (preparación de equipo nuevo) · DESKTOP-QQ3KOCN
 

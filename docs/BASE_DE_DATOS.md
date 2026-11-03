@@ -2,7 +2,7 @@
 
 PostgreSQL 13+ (probado en 16.4). TimescaleDB es **opcional**: si el servidor la tiene, `candles` y `account_snapshots` se vuelven hypertables; si no, son tablas normales y el sistema funciona igual.
 
-- Esquema completo: [infra/postgres/init.sql](../infra/postgres/init.sql) (versión 2, idempotente).
+- Esquema completo: [infra/postgres/init.sql](../infra/postgres/init.sql) (versión 3, idempotente).
 - Aplicarlo a cualquier BD: `python scripts/init_db.py`. Para ver el estado sin cambiar nada: `--verificar`.
 
 ## Cómo crear o actualizar la base
@@ -39,6 +39,7 @@ erDiagram
 |---|---|---|---|
 | `candles` | data-collector | Velas OHLC cerradas. PK `(pair, granularity, timestamp)` | En uso |
 | `signals` | strategy-engine | Cada señal de cada estrategia | En uso |
+| `model_evaluations` | strategy-engine | Lo que vio el modelo en **cada** vela, opere o no: probabilidades, precio, ATR, SL/TP y los datos que más pesaron. El reporte de las 8:00 lo usa para el repaso «qué habría pasado». PK `(pair, granularity, timestamp, strategy_name)` | En uso (v3) |
 | `orders` | risk-manager (reserva), execution-engine | Órdenes y posiciones, de `pending` a `closed` | En uso |
 | `schema_version` | `init.sql` | Versión del esquema aplicada | En uso |
 | `account_snapshots` | execution-engine (pendiente) | Historial de balance y equity, para la curva de capital real | Preparada |

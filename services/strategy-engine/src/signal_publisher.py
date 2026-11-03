@@ -76,6 +76,37 @@ class SignalPublisher:
             log.error(f"Error publicando señal al bus Redis: {bus_err}")
             return False
 
+    def save_evaluation(self, pair: str, granularity: str, timestamp, strategy_name: str, state: dict) -> bool:
+        """
+        Guarda lo que vio el modelo en la vela (opere o no) en model_evaluations.
+        Es solo registro para el reporte: si falla, se avisa y la evaluación sigue.
+        """
+        if "p_long" not in state:
+            return False
+        try:
+            conn = self._get_connection()
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO model_evaluations (pair, granularity, timestamp, strategy_name, p_long, p_short, umbral,
+                                                   close, atr, sl_atr, tp_atr, horizonte_velas, senal, factores)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (pair, granularity, timestamp, strategy_name) DO UPDATE SET
+                        p_long = EXCLUDED.p_long, p_short = EXCLUDED.p_short, umbral = EXCLUDED.umbral,
+                        close = EXCLUDED.close, atr = EXCLUDED.atr, sl_atr = EXCLUDED.sl_atr, tp_atr = EXCLUDED.tp_atr,
+                        horizonte_velas = EXCLUDED.horizonte_velas, senal = EXCLUDED.senal, factores = EXCLUDED.factores
+                    """,
+                    (pair, granularity, timestamp, strategy_name, state.get("p_long"), state.get("p_short"),
+                     state.get("umbral"), state.get("cierre"), state.get("atr"), state.get("sl_atr"),
+                     state.get("tp_atr"), state.get("horizonte_velas"), state.get("senal"),
+                     Json(state["factores"]) if state.get("factores") is not None else None),
+                )
+            return True
+        except Exception as e:
+            log.warning(f"No se pudo guardar la evaluación de {pair} en model_evaluations: {e}")
+            self._conn = None  # se reconecta en el próximo intento
+            return False
+
     def close(self):
         if self._conn and not self._conn.closed:
             try:

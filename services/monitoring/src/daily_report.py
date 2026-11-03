@@ -37,6 +37,7 @@ from charts import (DOWN, DPI, EMA_COLORS, GRID, REFERENCE, SURFACE, TEXT_PRIMAR
                     duration_text, fetch_recent, fibonacci_levels, move_text, plot_timeframes, price_tag,
                     timeframe_summary)
 
+from review import hour_rows, last_hours, live_calibration, resolve_all, summary_text
 from shared.config import GRANULARITY_MINUTES, settings
 from shared.logger import get_logger
 from shared.timefmt import fmt_fecha, fmt_hora, fmt_local, local_tz, to_local, zona
@@ -72,6 +73,10 @@ class ReportData:
     closed_orders: pd.DataFrame = field(default_factory=pd.DataFrame)  # todas, por closed_at
     initial_balance: float = 10000.0
     timeframes: Dict[str, pd.DataFrame] = field(default_factory=dict)  # otras temporalidades (contexto)
+    # Repaso "qué habría pasado": evaluaciones guardadas del modelo y las velas desde la primera
+    review: bool = False
+    evaluations: pd.DataFrame = field(default_factory=pd.DataFrame)
+    review_candles: pd.DataFrame = field(default_factory=pd.DataFrame)
 
 
 # ---------------------------------------------------------------- cálculos
@@ -95,6 +100,17 @@ def due_slot(now: datetime, last_sent: Optional[str], times_local: List[str]) ->
             slot = f"{local.date().isoformat()} {h:02d}:{m:02d}"
             return slot if slot != last_sent else None
     return None
+
+
+def review_due(now: datetime, times_local: Optional[List[str]] = None) -> bool:
+    """¿El turno de ahora es uno de los que llevan el repaso de las últimas 24 h (REPORT_REVIEW_TIMES)?"""
+    local = to_local(now)
+    for hhmm in (settings.report_review_times if times_local is None else times_local):
+        h, m = (int(x) for x in hhmm.split(":"))
+        start = local.replace(hour=h, minute=m, second=0, microsecond=0)
+        if start <= local < start + CATCH_UP:
+            return True
+    return False
 
 
 def session_bounds(name: str, when: datetime) -> Tuple[datetime, datetime]:
@@ -499,8 +515,17 @@ def _instrument_section(data: ReportData, refs: Optional[Dict] = None) -> Dict[s
     plan = _model_plan(data.strategy_state)
     plan_text = _plan_text(plan, data.pair, price, _risk_money(data), gran_minutes) if plan else ""
     why_rows = _why_rows(plan, gran_minutes) if plan else []
+    review = {}
+    if data.review:
+        resolved = resolve_all(data.evaluations, data.review_candles if not data.review_candles.empty else data.candles,
+                               data.pair)
+        recent = last_hours(resolved, data.now)
+        review = {"summary": summary_text(recent) if not data.evaluations.empty else
+                  "Todavía no hay evaluaciones guardadas: el repaso empieza a llenarse desde que el strategy-engine "
+                  "guarda cada hora (versión del 03/11).",
+                  "rows": hour_rows(recent, d, fmt_hora, gran_minutes), "resolved": resolved}
     return {"pair": data.pair, "name": display_name(data.pair), "short": model_short, "detail": model_detail, "ref": ref,
-            "plan_text": plan_text, "why_rows": why_rows,
+            "plan_text": plan_text, "why_rows": why_rows, "review": review,
             "close": px(price), "tf_rows": timeframe_rows(data), "has_tf_chart": bool(data.timeframes),
             "open_rows": open_rows, "open_texts": open_texts, "closed_rows": closed_rows}
 
@@ -603,6 +628,8 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = ()) -> Tuple[st
         lines += [f"  {r[0]}: tendencia {r[1]}, vela típica {r[2]}, rango {r[3]}, precio {r[4]}" for r in s["tf_rows"]]
         lines += [f"  POSICIÓN: {t}" for t in s["open_texts"]] or ["  Sin posiciones abiertas."]
         lines += [f"  Cerrada (24 h): {' | '.join(r)}" for r in s["closed_rows"]]
+        if s["review"]:
+            lines += [f"  REPASO 24 h: {s['review']['summary']} (detalle hora por hora en el correo)"]
     lines += ["", f"CUENTA SIMULADA: {account_line}", "", "ACUMULADO (todos los instrumentos):"]
     lines += [f"  {k}: {v}" for k, v in stats_rows] + [f"  {ref}"]
     lines += ["", "Modo simulación (DRY_RUN): no se envían órdenes a ningún broker."]
@@ -638,6 +665,12 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = ()) -> Tuple[st
         if s["why_rows"]:
             why_html = (f"<p {p}><b>Lo que más pesó en cada probabilidad</b> (los 3 datos de las últimas velas que más "
                         f"la movieron)</p>" + table(["Operación", "Efecto", "Dato"], s["why_rows"]))
+        review_html = ""
+        if s["review"]:
+            review_html = (f"<p {p}><b>Repaso de las últimas 24 h: qué habría pasado con cada plan</b><br>"
+                           f"{s['review']['summary']}</p>"
+                           + (table(["Hora", "Precio", "Compra", "Venta", "Operó"], s["review"]["rows"])
+                              if s["review"]["rows"] else ""))
         parts.append(f"""
 <h2 {h2}>{s['name']} · precio {s['close']}</h2>
 <p {p}>{s['detail']}</p>
@@ -647,7 +680,25 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = ()) -> Tuple[st
 {why_html}
 {open_html}
 {closed_html}
+{review_html}
 {tf_html}""")
+
+    # Acumulado en vivo: ¿se cumplen las probabilidades? (solo en los reportes con repaso)
+    live_rows = [[s["name"]] + r for s in sections if s["review"] for r in live_calibration(s["review"]["resolved"])]
+    live_html = ""
+    if any(s["review"] for s in sections):
+        live_html = (f"<h2 {h2}>¿Se cumplen las probabilidades del modelo? (acumulado en vivo)</h2>"
+                     + (table(["Instrumento", "Operación", "Probabilidad", "Horas con resultado", "Dijo (media)",
+                               "Tocó objetivo"], live_rows) if live_rows else "")
+                     + f"<p style='font-size:12px;color:{TEXT_SECONDARY}'>Si el modelo funciona, «Tocó objetivo» sube "
+                       f"junto con la probabilidad y en «50 % o más» supera el 45 %, que es donde empata con los costos. "
+                       f"En la prueba de 2023-2026 fue casi plano (~35 % en todos los tramos). Hacen falta cientos de "
+                       f"horas para que esta tabla diga algo; horas seguidas comparten futuro.</p>")
+        # Antes de la línea final del modo simulación
+        lines[-2:-2] = ["", "ACUMULADO EN VIVO (¿se cumplen las probabilidades?):"] + (
+            [f"  {r[0]} · {r[1]} {r[2]}: {r[3]} h con resultado, dijo {r[4]}, tocó objetivo {r[5]}"
+             for r in live_rows] or ["  todavía sin horas con resultado"])
+        text = "\n".join(lines)
 
     html = f"""<html><body style="font-family:Arial,Helvetica,sans-serif;color:{TEXT_PRIMARY};background:{SURFACE};max-width:900px">
 <h1 style="font-size:19px;margin:0 0 4px">{title} · {', '.join(display_name(d.pair) for d in datas)} · velas de {first.granularity}</h1>
@@ -660,6 +711,7 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = ()) -> Tuple[st
 {table(["Hora", "Moneda", "Noticia", "Previsión", "Anterior", "Afecta a"], news_rows) if news_rows else ""}
 <p style="font-size:12px;color:{TEXT_SECONDARY};margin:6px 0 0">{news_note}</p>
 {''.join(parts)}
+{live_html}
 
 <h2 {h2}>Cuenta simulada</h2>
 <p {p}>{account_line}</p>
@@ -720,7 +772,31 @@ def report_images(datas: List[ReportData]) -> Dict[str, bytes]:
     return images
 
 
-def collect(bus, checker, now: Optional[datetime] = None) -> List[ReportData]:
+def _load_review(conn, pair: str, gran: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Evaluaciones guardadas del modelo y las velas desde la primera. Si la tabla
+    aún no existe (BD sin actualizar a la v3), vacío: el reporte sale igual.
+    """
+    try:
+        evals = pd.read_sql("SELECT * FROM model_evaluations WHERE pair = %s AND granularity = %s ORDER BY timestamp",
+                            conn, params=(pair, gran))
+    except Exception as e:
+        conn.rollback()
+        log.warning(f"Reporte: no se pudieron leer las evaluaciones de {pair} ({e}); ¿falta scripts/init_db.py?")
+        return pd.DataFrame(), pd.DataFrame()
+    if evals.empty:
+        return evals, pd.DataFrame()
+    evals["timestamp"] = pd.to_datetime(evals["timestamp"], utc=True)
+    candles = pd.read_sql("SELECT timestamp, open, high, low, close FROM candles WHERE pair = %s AND granularity = %s "
+                          "AND complete AND timestamp > %s ORDER BY timestamp", conn,
+                          params=(pair, gran, evals["timestamp"].min().to_pydatetime()))
+    if not candles.empty:
+        candles["timestamp"] = pd.to_datetime(candles["timestamp"], utc=True)
+        candles = candles.set_index("timestamp").astype(float)
+    return evals, candles
+
+
+def collect(bus, checker, now: Optional[datetime] = None, review: bool = False) -> List[ReportData]:
     """Un ReportData por cada par de FOREX_PAIRS que tenga velas en la BD."""
     import psycopg2
 
@@ -736,11 +812,13 @@ def collect(bus, checker, now: Optional[datetime] = None) -> List[ReportData]:
             if candles.empty:
                 log.warning(f"Reporte: no hay velas de {pair} {gran} en la BD; se omite.")
                 continue
+            evaluations, review_candles = _load_review(conn, pair, gran) if review else (pd.DataFrame(), pd.DataFrame())
             out.append(ReportData(
                 pair=pair, granularity=gran, now=now, candles=candles, health=health,
                 strategy_state=bus.get_json(f"{settings.key_strategy_state_prefix}{pair}"), account=account,
                 open_orders=open_orders, closed_orders=closed, initial_balance=settings.sim_initial_balance,
                 timeframes=collect_timeframes(pair, now, skip=gran),
+                review=review, evaluations=evaluations, review_candles=review_candles,
             ))
     finally:
         conn.close()
@@ -752,7 +830,7 @@ def collect(bus, checker, now: Optional[datetime] = None) -> List[ReportData]:
 def send_daily_report(email, telegram, bus, checker, now: Optional[datetime] = None) -> bool:
     from econ_calendar import calendar_for_report
 
-    datas = collect(bus, checker, now)
+    datas = collect(bus, checker, now, review=review_due(now or datetime.now(timezone.utc)))
     events = calendar_for_report([d.pair for d in datas], datas[0].now)
     images = report_images(datas)  # antes del texto: si un gráfico falla, el HTML no lo referencia
     subject, html, text = build_report(datas, events)
@@ -777,7 +855,7 @@ def main():
         if args.guardar:
             from econ_calendar import calendar_for_report
 
-            datas = collect(bus, checker)
+            datas = collect(bus, checker, review=True)
             images = report_images(datas)
             subject, html, _ = build_report(datas, calendar_for_report([d.pair for d in datas], datas[0].now))
             out = Path(args.guardar)
