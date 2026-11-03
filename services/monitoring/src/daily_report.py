@@ -828,10 +828,13 @@ def collect(bus, checker, now: Optional[datetime] = None, review: bool = False) 
     return out
 
 
-def send_daily_report(email, telegram, bus, checker, now: Optional[datetime] = None) -> bool:
+def send_daily_report(email, telegram, bus, checker, now: Optional[datetime] = None,
+                      review: Optional[bool] = None) -> bool:
+    """`review`: incluir el repaso de 24 h; None = según REPORT_REVIEW_TIMES (el turno de ahora)."""
     from econ_calendar import calendar_for_report
 
-    datas = collect(bus, checker, now, review=review_due(now or datetime.now(timezone.utc)))
+    review = review_due(now or datetime.now(timezone.utc)) if review is None else review
+    datas = collect(bus, checker, now, review=review)
     events = calendar_for_report([d.pair for d in datas], datas[0].now)
     images = report_images(datas)  # antes del texto: si un gráfico falla, el HTML no lo referencia
     subject, html, text = build_report(datas, events)
@@ -867,7 +870,8 @@ def main():
             (out / "reporte.html").write_text(html, encoding="utf-8")
             print(f"[v] {subject}\n    -> {out / 'reporte.html'}")
         elif args.enviar:
-            ok = send_daily_report(EmailNotifier(), TelegramNotifier(), bus, checker)
+            # Envío manual (para probar): siempre con el repaso de las últimas 24 h
+            ok = send_daily_report(EmailNotifier(), TelegramNotifier(), bus, checker, review=True)
             print("[v] Reporte enviado" if ok else "[x] No se pudo enviar el email (ver log)")
         else:
             parser.print_help()
