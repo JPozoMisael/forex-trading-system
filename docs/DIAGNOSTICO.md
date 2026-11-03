@@ -4,7 +4,7 @@
 > `python scripts/diagnostico.py --guardar` y queda en [diagnosticos/](diagnosticos/).
 > Actualizar este archivo cada vez que se cierre o aparezca un pendiente.
 
-**Última revisión:** 2026-10-29 · 142 tests pasan.
+**Última revisión:** 2026-11-03 · 173 tests pasan.
 
 ## 1. Qué funciona hoy
 
@@ -15,7 +15,10 @@
 | Estrategias `ma_crossover` (EMA 9/21 + EMA 200) y `mean_reversion` (Bollinger + RSI), inactivas por defecto | ✅ validadas: SIN VENTAJA | `services/strategy-engine/src/strategies/` |
 | Riesgo fail-closed: lotes con `tick_value`, circuit breaker sobre equity, límite de posiciones, spread, R:R mínimo | ✅ | `services/risk-manager/src/` |
 | Ejecución simulada (`SimulatedBroker`) y real MT5 (`MT5Broker`), idempotente y reconciliada | ✅ | `services/execution-engine/src/` |
-| Alertas Telegram / email, health check (BD, Redis, cuenta, velas, modelo), reportes 1:30 y 8:00 en hora de Ecuador con gráficos multi-temporalidad y correo de operación cerrada con gráfico | ✅ | `services/monitoring/src/` (`charts.py`, `daily_report.py`, `trade_report.py`) |
+| Alertas Telegram / email al instante (señal, orden, cierre, bloqueo), health check (BD, Redis, cuenta, velas, modelo), reportes 1:30 y 8:00 en hora de Ecuador con gráficos multi-temporalidad, calendario económico y correo de operación cerrada con gráfico | ✅ | `services/monitoring/src/` (`charts.py`, `daily_report.py`, `trade_report.py`, `econ_calendar.py`) |
+| "Lo que ve el modelo" en el reporte: la compra/venta que haría aunque no haya señal (entrada, SL, TP, dinero) y los 3 datos que más pesaron (`TradeModel.explain`) | ✅ | `daily_report.py`, `ml/model.py`, `ml_strategy.py` |
+| Repaso de las 8:00: qué habría pasado cada hora con la compra y la venta (objetivo / stop / en curso) y acumulado en vivo por tramo de probabilidad. El strategy-engine guarda cada evaluación en `model_evaluations` (esquema v3) | ✅ código · ⏳ falta `init_db.py` en el servidor (P17) | `review.py`, `signal_publisher.py`, `infra/postgres/init.sql` |
+| Herramientas de análisis del modelo: calibración en la prueba final y estudio de patrones con herramientas de TradingView (conjunto de features `tradingview`) | ✅ | `backtesting/src/run_calibracion.py`, `run_patrones.py`, `ml/tradingview.py` |
 | Dashboard Grafana | ✅ básico | `infra/grafana/dashboards/trading_overview.json` |
 | Despliegue de los 5 servicios en un solo contenedor (Dokploy) | ✅ | `Dockerfile` raíz + `scripts/run_all.py` |
 | Backtester con costes por instrumento y validación walk-forward + permutación + bootstrap; prueba final pre-registrada por instrumento | ✅ | `backtesting/src/` (`validation.py`, `run_instrumentos.py`) |
@@ -37,12 +40,14 @@
 | P12 | Media | El `SimulatedBroker` no cobra swap a las posiciones que pasan la noche: el paper trading sale un poco optimista (el backtest de H1 tampoco lo cobraba) | Cobrar `financiamiento_anual_pct` también al cerrar en simulación |
 | P13 | Media | En Dokploy `models/` no persiste: cada redeploy reentrena (~5 min sin análisis) y el modelo cambia un poco | Volumen en `/app/models` |
 | P14 | Media | Dinero real con XM exige MT5, que solo corre en Windows; el servidor de Dokploy es Linux | Antes de operar real: VPS Windows con MT5 o un broker con API que acepte Ecuador |
-| P15 | Baja | Sin reentrenamiento programado: el modelo se queda fijo | Reentrenar cada 6 meses (como en la validación walk-forward) y registrar cada versión |
+| P15 | Baja | Sin reentrenamiento programado: el modelo se queda fijo y **no aprende solo** de lo que pasa en vivo | Reentrenar cada 6 meses (como en la validación walk-forward) y registrar cada versión. Desde v3, `model_evaluations` guarda lo que vio cada hora: sirve para medir cada versión en vivo |
+| P17 | Media | La tabla `model_evaluations` (esquema v3) no existe en el servidor hasta correr `init_db.py`; `init.sql` v3 no se probó todavía contra un Postgres real | Tras el redeploy: `python /app/scripts/init_db.py` en el contenedor y comprobar con `--verificar`. Sin ella, el reporte sale igual y avisa que faltan evaluaciones |
 | P16 | **Alta** | El modelo v1 **no está calibrado**: en la prueba final, el % de horas que tocan el objetivo es casi igual en todos los tramos de probabilidad por debajo del 50 % (EUR_USD: 35 % tanto si dijo 27 % como 42 %). Sus probabilidades apenas separan horas buenas de malas, y los tramos de 50 % o más tienen muy pocas horas para concluir nada. En el oro, cualquier compra rindió ~40 % por la subida del oro, no por el modelo (`reports/20261103_0244_calibracion.md`) | Seguir tomando el paper trading como comprobación, no como ventaja. Mejorar la capacidad de separar (otros datos u otro objetivo) con protocolo pre-registrado; `run_calibracion.py` sirve para medir cada versión. Probado 2026-11-03: las herramientas de TradingView (`run_patrones.py`) tampoco separan; falta probar otro planteamiento de la operación u otras fuentes de datos |
 | P9 | Baja | `fakeredis` está en requirements pero no siempre instalado, así que `test_bus.py` se omite | `pip install -r requirements-local.txt` |
 
 ## 3. Riesgos a vigilar
 
-- **Sin evidencia suficiente para dinero real**: EUR_USD, USD_JPY y XAU_USD salieron positivos pero no concluyentes en la prueba final (ninguno con p < 0.0033). Mantener `DRY_RUN=true` y comparar el paper trading con `produccion.referencia_backtest` durante meses.
+- **Sin evidencia suficiente para dinero real**: EUR_USD, USD_JPY y XAU_USD salieron positivos pero no concluyentes en la prueba final. Con 25 combinaciones probadas, el umbral para dinero real es p < 0.002 (Bonferroni), y la calibración (P16) indica que el modelo casi no separa horas buenas de malas. Mantener `DRY_RUN=true` y comparar el paper trading con `produccion.referencia_backtest` y con el acumulado en vivo del reporte.
+- **Cada prueba nueva sube la exigencia**: los 4 setups de trader propuestos (pendientes de aprobación) sumarían 12 combinaciones, 37 en total, y el umbral bajaría a p < 0.00135. Pre-registrar en `config.yaml` antes de correr.
 - **Hora del servidor MT5**: XM usa GMT+2/+3 y `mt5_client.py` lo convierte a UTC. Cualquier código nuevo que lea velas de MT5 debe pasar por esa conversión.
 - **Credenciales**: el `.env` no viaja con git. Si se rota una clave (OANDA, Telegram, Gmail, Postgres de Dokploy), actualizarla en cada equipo y en Dokploy.
