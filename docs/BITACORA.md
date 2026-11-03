@@ -46,6 +46,13 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
   8. El repaso era O(N²); ahora usa búsqueda binaria.
   - Pendiente menor: las features se calculan dos veces por vela en vivo.
   - La corrida de los setups que estaba en marcha **se detuvo y se borró sin leerla**: tenía los errores 1 y 3. La pasada válida es la de después de las correcciones.
+- **Resultado de los setups** (`reports/20261103_0524_setups/informe.md`, con gráficos de una ganadora y una perdedora por setup): **ninguno cumple.**
+  - Los 12 (4 setups × 3 instrumentos) pierden en 2012–2023 con costes reales: entre −5 % y −70 %, de −0.07 a −0.27 R por operación.
+  - En 2023–2026, tres quedan apenas positivos (oro EMA 50 +2.3 %, oro Bollinger+RSI +2.0 %, USD_JPY ruptura +1.4 %), con p > 0.09 y habiendo perdido en el desarrollo.
+  - Fibonacci tiene pocas operaciones (~20 en 3 años).
+  - Van **37 combinaciones probadas**.
+  - **Conclusión de la semana:** ni el modelo, ni las herramientas de TradingView hora por hora, ni los setups clásicos tienen ventaja en H1 con costes reales.
+  - Siguiente paso sugerido: dejar el análisis técnico de corto plazo y, si se sigue investigando, probar seguimiento de tendencia a varias semanas con muchos instrumentos (pre-registrado), o quedarse en simulación.
 - 191 tests pasan.
 
 ## 2026-10-31 (preparación de equipo nuevo) · DESKTOP-QQ3KOCN

@@ -162,6 +162,10 @@ swing:
 #   - Para paper trading: veredicto VENTAJA CON EVIDENCIA o POSITIVO PERO NO CONCLUYENTE
 #     y retorno neto > 0 en LOS DOS periodos. Para dinero real, además VENTAJA CON
 #     EVIDENCIA en la prueba final con p < 0.05 / 37 (25 combinaciones previas + 12).
+# Resultado del 2026-11-03 (reports/20261103_0524_setups/informe.md): NINGUNO cumple. Los 12
+# pierden en el desarrollo (-5 % a -70 %, de -0.07 a -0.27 R por operación); en la final
+# 3 quedan apenas positivos (oro EMA 50 y Bollinger+RSI, USD_JPY ruptura) con p > 0.09.
+# Total probado: 37 combinaciones.
 setups:
   nombres: [fibonacci, ema50, ruptura_londres, bollinger_rsi]
   instrumentos: [EUR_USD, USD_JPY, XAU_USD]
