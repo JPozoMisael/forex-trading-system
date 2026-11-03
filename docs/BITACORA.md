@@ -34,8 +34,19 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
   - La resolución usa las mismas reglas que el objetivo de entrenamiento (`services/monitoring/src/review.py`).
   - **Para activarlo en el servidor hay que correr `python /app/scripts/init_db.py` después del redeploy.** Sin eso, el reporte sale igual y avisa que faltan evaluaciones. `init.sql` v3 no se probó contra Postgres en DESKTOP-QQ3KOCN (sin Docker).
   - El modelo **no aprende solo** de esto: los registros sirven para medirlo en vivo y para reentrenarlo después (P15).
-- Pendiente: aprobación de los 4 setups de trader (Fibonacci, EMA 50, ruptura del máximo de ayer en Londres, Bollinger+RSI) antes de pre-registrarlos.
-- 173 tests pasan.
+- **Setups de trader pre-registrados** en `config.yaml` (commit `8c7b0f9`) antes de programarlos: Fibonacci, EMA 50, ruptura del máximo de ayer en Londres y Bollinger + RSI. Código en `strategies/setups.py` y `backtesting/src/run_setups.py`; salida por tiempo opcional en el motor (`max_hold_bars`, apagada por defecto).
+- **Auditoría de código** (`/code-review high` sobre `dd46671..HEAD`), con 10 hallazgos y todos los relevantes corregidos con test:
+  1. **H4 y diario podían mirar el futuro** si los datos empezaban junto a un hueco: la duración de vela se tomaba de las 2 primeras filas. Ahora es la separación mínima (`bar_step`). No afectó al estudio ni a los backtests (los datos empiezan un jueves a las 9:00); sí habría afectado en vivo.
+  2. El conjunto `tradingview` nunca evaluaba en vivo (`lookback_window` fijo en 1000).
+  3. **"Ayer" el lunes era el trozo del domingo**, con rupturas falsas cada lunes. Ahora el domingo cuenta como lunes (`trading_day`). Tocó levemente dos datos del estudio de patrones; no cambia su conclusión.
+  4. Un NaN en la explicación hacía perder la fila de `model_evaluations`.
+  5. Si una vela no se podía evaluar, se guardaba la evaluación anterior con la hora nueva.
+  6. El registro en BD iba antes de publicar la señal; ahora va después.
+  7. Falsa alarma semanal del oro el domingo: abre una hora después que las divisas.
+  8. El repaso era O(N²); ahora usa búsqueda binaria.
+  - Pendiente menor: las features se calculan dos veces por vela en vivo.
+  - La corrida de los setups que estaba en marcha **se detuvo y se borró sin leerla**: tenía los errores 1 y 3. La pasada válida es la de después de las correcciones.
+- 191 tests pasan.
 
 ## 2026-10-31 (preparación de equipo nuevo) · DESKTOP-QQ3KOCN
 

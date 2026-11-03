@@ -24,6 +24,7 @@ from engine import BacktestEngine
 from shared.config import settings
 from strategies.ma_crossover import MACrossoverStrategy
 from strategies.mean_reversion import MeanReversionStrategy
+from strategies.setups import SETUP_NAMES, SetupStrategy
 
 
 def print_banner():
@@ -39,7 +40,7 @@ def main():
         "--strategy",
         type=str,
         default="ma_crossover",
-        choices=["ma_crossover", "mean_reversion"],
+        choices=["ma_crossover", "mean_reversion"] + [f"setup_{s}" for s in SETUP_NAMES],
         help="Estrategia a simular",
     )
     parser.add_argument("--capital", type=float, default=10000.0, help="Capital inicial en USD")
@@ -95,6 +96,8 @@ def main():
     # 2. Instanciar Estrategia
     if args.strategy == "ma_crossover":
         strategy = MACrossoverStrategy(fast_period=9, slow_period=21, trend_period=200, use_trend_filter=True)
+    elif args.strategy.startswith("setup_"):
+        strategy = SetupStrategy(args.strategy[len("setup_"):]).precompute(df)  # señales causales, de una vez
     else:
         strategy = MeanReversionStrategy(bb_period=20, bb_std=2.0, rsi_period=14)
 

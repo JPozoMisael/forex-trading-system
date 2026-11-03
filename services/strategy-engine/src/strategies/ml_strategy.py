@@ -83,8 +83,9 @@ class MLStrategy(BaseStrategy):
 
     @property
     def lookback_window(self) -> int:
-        # Historia que recibe evaluate(): de sobra para que la EMA 200 converja.
-        return 1000
+        # Historia que recibe evaluate(): de sobra para que la EMA 200 converja (y, con el
+        # conjunto 'tradingview', para la EMA 200 del diario, que necesita ~5300 velas H1).
+        return max(1000, self.min_candles_required + 500)
 
     def supports(self, pair: str, granularity: str) -> bool:
         # El modelo solo sabe del par y la temporalidad con que se entrenó
@@ -109,6 +110,7 @@ class MLStrategy(BaseStrategy):
         return self.model.predict_proba(self._features(df).iloc[[-1]]).iloc[0]
 
     def evaluate(self, df: pd.DataFrame, pair: str) -> Optional[Signal]:
+        self.last_state = None  # nunca reutilizar lo de la vela anterior si esta no se puede evaluar
         if not self.validate_dataframe(df):
             return None
         p = self.probabilities(df)

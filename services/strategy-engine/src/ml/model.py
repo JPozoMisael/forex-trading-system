@@ -63,7 +63,9 @@ class TradeModel:
         for side, clf in (("long", self.long), ("short", self.short)):
             contrib = clf.predict(X, pred_contrib=True)[0][:-1]  # la última columna es la base
             order = sorted(range(len(contrib)), key=lambda i: -abs(contrib[i]))[:top]
-            out[side] = [{"dato": self.feature_columns[i], "valor": round(float(X.iloc[0, i]), 6),
+            # Un dato vacío (NaN) va como None: JSONB no acepta NaN y se perdería la fila entera
+            out[side] = [{"dato": self.feature_columns[i],
+                          "valor": None if pd.isna(X.iloc[0, i]) else round(float(X.iloc[0, i]), 6),
                           "aporte": round(float(contrib[i]), 4)} for i in order]
         return out
 

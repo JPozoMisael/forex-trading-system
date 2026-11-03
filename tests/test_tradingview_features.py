@@ -42,6 +42,32 @@ def test_h4_uses_only_closed_h4_candles(candles):
     assert e.loc[t, "ema50"] != e2.loc[t, "ema50"]
 
 
+def test_h4_is_still_closed_only_when_data_starts_next_to_a_weekend(candles):
+    """Bug de la auditoría: con la 1.ª separación (viernes→domingo) las velas mayores se usaban antes de cerrar."""
+    fri = candles.index[(candles.index.dayofweek == 4) & (candles.index.hour == 21)][3]
+    data = candles[candles.index >= fri]
+    data = data.drop(data.index[1:][data.index[1:] < data.index[0] + pd.Timedelta(hours=48)])  # hueco de fin de semana
+    assert data.index[1] - data.index[0] >= pd.Timedelta(hours=48)
+    e = higher_tf_emas(data, "4h")
+    t = data.index[(data.index.hour == 11)][60]
+    altered = data.copy()
+    altered.loc[altered.index >= t.floor("4h") + pd.Timedelta(hours=3), "close"] *= 1.5
+    before = t - pd.Timedelta(hours=1)
+    assert e.loc[before, "ema50"] == higher_tf_emas(altered, "4h").loc[before, "ema50"]
+
+
+def test_monday_yesterday_is_friday_not_the_sunday_stub():
+    from ml.tradingview import trading_day
+
+    idx = pd.DatetimeIndex(["2026-10-30 20:00", "2026-11-01 22:00", "2026-11-02 08:00"], tz="UTC")  # vie, dom, lun
+    assert list(trading_day(idx).day) == [30, 2, 2]
+    rows = [(1.10, 1.20, 1.00, 1.10), (1.10, 1.11, 1.09, 1.10), (1.10, 1.12, 1.09, 1.11)]
+    df = pd.DataFrame(rows, columns=["open", "high", "low", "close"], index=idx)
+    day = trading_day(df.index)
+    prev_max = df["high"].groupby(day).max().shift(1).reindex(day).to_numpy()
+    assert prev_max[-1] == 1.20  # el lunes compara contra el máximo del viernes
+
+
 def test_trend_rule_is_the_same_as_the_report():
     c, e50, e200 = (pd.Series(v) for v in ([3.0, 1.0, 2.0], [2.0, 2.0, 1.0], [1.0, 3.0, 3.0]))
     assert trend(c, e50, e200).tolist() == [1.0, -1.0, 0.0]

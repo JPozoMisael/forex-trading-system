@@ -56,6 +56,7 @@ class BacktestEngine:
         default_sl_pips: float = 20.0,
         default_tp_pips: float = 40.0,
         financing_annual_pct: float = 0.0,
+        max_hold_bars: Optional[int] = None,
     ):
         self.initial_balance = initial_balance
         self.risk_per_trade_pct = risk_per_trade_pct
@@ -66,6 +67,9 @@ class BacktestEngine:
         self.default_sl_pips = default_sl_pips
         self.default_tp_pips = default_tp_pips
         self.financing_annual_pct = financing_annual_pct  # swap aproximado, % anual del nocional (0 = no se cobra)
+        # Si a las N velas (contando la de entrada) no tocó SL ni TP, se cierra al cierre de esa vela.
+        # None = sin límite (así se corrieron todas las pruebas anteriores a los setups)
+        self.max_hold_bars = max_hold_bars
 
     def run(
         self,
@@ -147,6 +151,11 @@ class BacktestEngine:
             #    la vela ocurre después de la apertura)
             if active_trade is not None:
                 exit_price, reason = self._check_exit(active_trade, o, h, l, half_spread, slip)
+                active_trade["bars"] = active_trade.get("bars", 0) + 1
+                if reason is None and self.max_hold_bars and active_trade["bars"] >= self.max_hold_bars:
+                    is_buy = active_trade["side"] == OrderSide.BUY
+                    exit_price = c - half_spread - slip if is_buy else c + half_spread + slip
+                    reason = "tiempo"
                 if reason is not None:
                     close_trade(active_trade, exit_price, bar_time, reason)
                     active_trade = None

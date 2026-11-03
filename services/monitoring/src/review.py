@@ -31,20 +31,23 @@ def resolve(ev: Dict[str, Any], candles: pd.DataFrame, pair: str) -> Dict[str, D
     atr, horizon = ev.get("atr"), int(ev.get("horizonte_velas") or 48)
     if not atr or pd.isna(atr) or not ev.get("sl_atr") or not ev.get("tp_atr"):
         return out
-    after = candles[candles.index > pd.Timestamp(ev["timestamp"])].iloc[:horizon]
+    # Velas posteriores: búsqueda binaria (no una máscara sobre toda la tabla en cada evaluación)
+    i0 = candles.index.searchsorted(pd.Timestamp(ev["timestamp"]), side="right")
+    after = candles.iloc[i0:i0 + horizon]
     if after.empty:
         return out
     costs, pip = instrument_costs(pair), get_pip_size(pair)
     hs, slip = costs["spread_pips"] * pip / 2, costs["slippage_pips"] * pip
     o = float(after["open"].iloc[0])
+    highs, lows = after["high"].to_numpy(dtype=float), after["low"].to_numpy(dtype=float)
     for side, sign in (("long", 1), ("short", -1)):
         entry = o + sign * (hs + slip)
         sl, tp = entry - sign * ev["sl_atr"] * atr, entry + sign * ev["tp_atr"] * atr
         res = "en_curso" if len(after) < horizon else "ninguno"
-        for _, bar in after.iterrows():
+        for high, low in zip(highs, lows):
             # La compra cierra al bid (precio medio − medio spread) y la venta al ask
-            worst = bar["low"] - hs if sign > 0 else bar["high"] + hs
-            best = bar["high"] - hs if sign > 0 else bar["low"] + hs
+            worst = low - hs if sign > 0 else high + hs
+            best = high - hs if sign > 0 else low + hs
             if (worst - sl) * sign <= 0:
                 res = "sl"
                 break

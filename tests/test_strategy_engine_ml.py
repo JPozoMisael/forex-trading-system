@@ -91,6 +91,23 @@ def test_ml_strategy_records_what_it_saw(candles):
         assert aportes == sorted(aportes, reverse=True)
 
 
+def test_a_candle_that_cannot_be_evaluated_does_not_reuse_the_previous_state(candles):
+    """Bug de la auditoría: se guardaba en model_evaluations lo de la vela anterior con la hora nueva."""
+    strat = MLStrategy.train(candles, CFG, "EUR_USD")
+    strat.evaluate(candles.iloc[-1000:], "EUR_USD")
+    assert strat.last_state is not None
+    strat.evaluate(candles.iloc[-10:], "EUR_USD")  # muy pocas velas: no se puede evaluar
+    assert strat.last_state is None
+
+
+def test_explanation_never_stores_nan(candles):
+    strat = MLStrategy.train(candles, CFG, "EUR_USD")
+    feats = strat._features(candles.iloc[-1000:]).copy()
+    feats.iloc[-1, :] = float("nan")  # todos los datos vacíos en la última vela
+    out = strat.model.explain(feats, top=len(strat.model.feature_columns))
+    assert all(f["valor"] is None for side in out.values() for f in side)
+
+
 def test_explanation_adds_up_to_the_probability(candles):
     """Los aportes de TODOS los datos más la base dan exactamente la probabilidad del modelo."""
     import numpy as np
@@ -125,8 +142,12 @@ def test_strategy_engine_builds_active_strategies(candles, fake_fetch, tmp_path)
     engine = _load_strategy_engine_main()
     assert [s.name for s in engine.build_strategies(["ma_crossover", "mean_reversion"], tmp_path)] == \
         [engine.MACrossoverStrategy().name, engine.MeanReversionStrategy().name]
+    setups = engine.build_strategies(["setup_ema50", "setup_fibonacci"], tmp_path)
+    assert [s.name for s in setups] == ["Setup_ema50", "Setup_fibonacci"]
     with pytest.raises(ValueError):
         engine.build_strategies(["inventada"], tmp_path)
+    with pytest.raises(ValueError):
+        engine.build_strategies(["setup_inventado"], tmp_path)
     with pytest.raises(ValueError):
         engine.build_strategies([], tmp_path)
 

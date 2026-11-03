@@ -215,6 +215,15 @@ def test_report_without_plan_data_still_works():
     assert "Lo que haría" not in text and "Lo que más pesó" not in text
 
 
+def test_gold_sunday_reopen_is_not_a_false_alarm():
+    """Bug de la auditoría: el oro abre el domingo a las 18:00 de Nueva York, una hora después que las divisas."""
+    friday_last = datetime(2026, 11, 6, 21, tzinfo=UTC)           # vela 16-17 h NY del viernes (EST, UTC-5)
+    sunday_1900 = datetime(2026, 11, 9, 0, 0, 30, tzinfo=UTC)    # domingo 19:00:30 NY: su 1.ª vela aún sin guardar
+    assert candle_status(friday_last, sunday_1900, 60, "XAU_USD")["status"] == "healthy"
+    # Si a las 20:45 NY sigue sin velas, sí es un fallo
+    assert candle_status(friday_last, datetime(2026, 11, 9, 1, 45, tzinfo=UTC), 60, "XAU_USD")["status"] == "unhealthy"
+
+
 def test_review_report_lists_what_would_have_happened():
     data = _report_data(with_trades=False)
     c = data.candles

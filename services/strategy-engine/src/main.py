@@ -27,6 +27,7 @@ from shared.models import Candle
 from strategies.base_strategy import BaseStrategy
 from strategies.ma_crossover import MACrossoverStrategy
 from strategies.mean_reversion import MeanReversionStrategy
+from strategies.setups import SETUP_NAMES, SetupStrategy
 from signal_publisher import SignalPublisher
 
 log = get_logger(__name__)
@@ -109,8 +110,12 @@ def build_strategies(names: List[str], models_dir: Path = MODELS_DIR) -> List[Ba
             strategies.append(MeanReversionStrategy(bb_period=20, bb_std=2.0, rsi_period=14, rsi_oversold=30.0, rsi_overbought=70.0))
         elif name == "ml":
             strategies.extend(build_ml_strategies(load_trading_config(), models_dir))
+        elif name.startswith("setup_") and name[len("setup_"):] in SETUP_NAMES:
+            # Setups pre-registrados (config.yaml, sección setups); solo se activan si pasan su prueba
+            strategies.append(SetupStrategy(name[len("setup_"):]))
         else:
-            raise ValueError(f"Estrategia desconocida '{name}' en ACTIVE_STRATEGIES. Opciones: ml, ma_crossover, mean_reversion")
+            raise ValueError(f"Estrategia desconocida '{name}' en ACTIVE_STRATEGIES. Opciones: ml, ma_crossover, "
+                             f"mean_reversion, {', '.join('setup_' + s for s in SETUP_NAMES)}")
     if not strategies:
         raise ValueError("ACTIVE_STRATEGIES está vacío")
     return strategies
@@ -159,10 +164,11 @@ def main():
                 try:
                     sig = strat.evaluate(df.iloc[-strat.lookback_window:], pair=pair)
                     states[strat.name] = dict(strat.last_state or {}, senal=sig.direction.value if sig else None)
-                    publisher.save_evaluation(pair, candle.granularity, candle.timestamp, strat.name, states[strat.name])
                     if sig:
                         log.info(f"🔥 Señal detectada por [{strat.name}] en {pair}: {sig.direction.value.upper()} SL={sig.stop_loss} TP={sig.take_profit}")
                         publisher.publish(sig)
+                    # Después de publicar: el registro para el reporte nunca retrasa una señal
+                    publisher.save_evaluation(pair, candle.granularity, candle.timestamp, strat.name, states[strat.name])
                 except Exception:
                     states[strat.name] = {"error": True}
                     log.exception(f"Error ejecutando estrategia {strat.name} en {pair}")

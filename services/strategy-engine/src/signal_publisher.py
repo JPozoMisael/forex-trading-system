@@ -104,6 +104,11 @@ class SignalPublisher:
             return True
         except Exception as e:
             log.warning(f"No se pudo guardar la evaluación de {pair} en model_evaluations: {e}")
+            try:
+                if self._conn is not None:
+                    self._conn.close()
+            except Exception:
+                pass
             self._conn = None  # se reconecta en el próximo intento
             return False
 

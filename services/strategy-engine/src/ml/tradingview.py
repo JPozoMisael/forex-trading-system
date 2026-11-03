@@ -55,13 +55,40 @@ def trend(close: pd.Series, ema50: pd.Series, ema200: pd.Series) -> pd.Series:
     return pd.Series(np.where(up, 1.0, np.where(down, -1.0, 0.0)), index=close.index)
 
 
+def bar_step(index: pd.DatetimeIndex) -> pd.Timedelta:
+    """
+    Duración de una vela: la separación MÍNIMA entre velas seguidas. La primera
+    separación no sirve: si cae sobre un fin de semana o la pausa del oro, sale
+    de horas o días y las velas mayores se usarían antes de cerrar.
+    """
+    if len(index) < 2:
+        return pd.Timedelta(hours=1)
+    return pd.Series(index).diff().dropna().min()
+
+
+def trading_day(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """
+    Día de trading de cada vela (UTC): las velas del domingo (apertura de la
+    semana, 2-3 horas) cuentan como parte del lunes, como el diario de TradingView.
+    Así "ayer" el lunes es el viernes y no un trozo de domingo.
+    """
+    day = index.floor("D")
+    return day + pd.to_timedelta((index.dayofweek == 6).astype(int), unit="D")
+
+
 def higher_tf_emas(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     """
     EMA 50 y 200 de una temporalidad mayor (`rule`: '4h', '1D') llevadas a cada
     vela H1, usando solo velas mayores ya cerradas al cierre de la vela H1.
+    En el diario, el domingo se une al lunes (trading_day).
     """
-    step = df.index[1] - df.index[0] if len(df) > 1 else pd.Timedelta(hours=1)
-    big = df["close"].resample(rule, label="left", closed="left").last().dropna()
+    step = bar_step(df.index)
+    close = df["close"]
+    if rule == "1D":
+        close = close.groupby(trading_day(df.index)).last()
+        big = close
+    else:
+        big = close.resample(rule, label="left", closed="left").last().dropna()
     emas = pd.DataFrame({"ema50": calculate_ema(big, 50), "ema200": calculate_ema(big, 200)})
     emas.index = emas.index + pd.Timedelta(rule)            # cuándo cierra cada vela mayor
     h1_close = df.index + step                              # cuándo cierra cada vela H1
@@ -145,8 +172,8 @@ def tradingview_features(df: pd.DataFrame, atr_period: int = 14) -> pd.DataFrame
     f["estocastico"] = k.where(h.rolling(14).count() == 14)
     f["sesion"] = sessions(df.index)
 
-    # Máximo y mínimo del día anterior COMPLETO (UTC)
-    day = df.index.floor("D")
+    # Máximo y mínimo del día anterior COMPLETO (UTC; el domingo cuenta como lunes)
+    day = trading_day(df.index)
     daily = pd.DataFrame({"max": h.groupby(day).max(), "min": l.groupby(day).min()}).shift(1)
     f["dist_max_ayer"] = (c - daily["max"].reindex(day).to_numpy()) / atr
     f["dist_min_ayer"] = (c - daily["min"].reindex(day).to_numpy()) / atr

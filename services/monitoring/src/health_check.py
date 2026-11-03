@@ -58,6 +58,18 @@ def daily_break(pair: str, start: datetime, end: datetime) -> timedelta:
     return total
 
 
+def week_open(pair: str, now: datetime) -> datetime:
+    """
+    Última apertura semanal anterior a `now`: domingo 17:00 de Nueva York; el
+    oro y los metales abren una hora después (18:00).
+    """
+    ny = now.astimezone(NEW_YORK)
+    hour = 18 if pair.upper().startswith(("XAU", "XAG")) else 17
+    sunday = (ny - timedelta(days=(ny.weekday() + 1) % 7)).date()
+    start = datetime(sunday.year, sunday.month, sunday.day, hour, tzinfo=NEW_YORK)
+    return start if start <= now else start - timedelta(days=7)
+
+
 def candle_status(last_candle: Optional[datetime], now: datetime, gran_minutes: int, pair: str = "") -> Dict[str, Any]:
     """¿Llegan velas nuevas? Tolerancia: una vela y media de retraso (más la pausa diaria del oro)."""
     # Recién abierto el mercado aún no hay vela nueva: no se exige nada
@@ -66,8 +78,11 @@ def candle_status(last_candle: Optional[datetime], now: datetime, gran_minutes: 
     if last_candle is None:
         return {"status": "unhealthy", "detail": "no hay velas en la BD"}
     bar = timedelta(minutes=gran_minutes)
-    lag = now - (last_candle + bar)  # tiempo desde que cerró la última vela guardada
-    if lag > bar * 1.5 + daily_break(pair, last_candle + bar, now):
+    # Desde que cerró la última vela guardada, o desde la apertura de la semana si la última
+    # es del viernes (el oro abre el domingo una hora después que las divisas)
+    since = max(last_candle + bar, week_open(pair, now))
+    lag = now - since
+    if lag > bar * 1.5 + daily_break(pair, since, now):  # las pausas del fin de semana no cuentan
         return {"status": "unhealthy",
                 "detail": f"la última vela cerró el {fmt_local(last_candle + bar)}; sin velas nuevas hace {int(lag.total_seconds() // 60)} min"}
     return {"status": "healthy", "detail": f"última vela cerró el {fmt_local(last_candle + bar)}"}

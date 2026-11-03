@@ -123,10 +123,12 @@ def make_windows(index: pd.DatetimeIndex, initial_train_years: float, test_month
 
 
 def opposite_r(trade: Dict[str, Any], seg: pd.DataFrame, pair: str, spread_pips: float,
-               slippage_pips: float, commission_per_lot: float, financing_annual_pct: float = 0.0) -> float:
+               slippage_pips: float, commission_per_lot: float, financing_annual_pct: float = 0.0,
+               max_hold_bars: Optional[int] = None) -> float:
     """
     Resultado en R de la operación contraria: misma vela de entrada, mismas
-    distancias de SL/TP, dirección opuesta y los mismos costos.
+    distancias de SL/TP, dirección opuesta, los mismos costos y la misma salida
+    por tiempo.
     """
     pip = get_pip_size(pair)
     hs, slip = spread_pips * pip / 2, slippage_pips * pip
@@ -151,6 +153,12 @@ def opposite_r(trade: Dict[str, Any], seg: pd.DataFrame, pair: str, spread_pips:
         )
         if reason is not None:
             break
+        if max_hold_bars and i - i0 + 1 >= max_hold_bars:
+            c = float(seg["close"].iloc[i])
+            exit_price = c - hs - slip if side == OrderSide.BUY else c + hs + slip
+            break
+    else:
+        exit_price = None
     if exit_price is None:
         c = float(seg["close"].iloc[-1])
         exit_price = c - hs - slip if side == OrderSide.BUY else c + hs + slip
@@ -276,9 +284,13 @@ def validate(
         # Swap aproximado (0 si no está en la config: así se corrieron las pruebas de H1 y menores)
         "financing_annual_pct": float(cfg["costes"].get("financiamiento_anual_pct", 0.0)),
     }
+    # Salida por tiempo (solo los setups la definen; sin ella, como todas las pruebas anteriores)
+    max_hold = cfg["riesgo"].get("max_velas_abierta")
+    max_hold = int(max_hold) if max_hold else None
     engine_kwargs = dict(
         risk_per_trade_pct=float(cfg["riesgo"]["riesgo_por_operacion_pct"]),
         max_daily_loss_pct=float(cfg["riesgo"]["perdida_diaria_max_pct"]),
+        max_hold_bars=max_hold,
         **costs,
     )
     capital = float(cfg["riesgo"]["capital_inicial"])
@@ -326,7 +338,7 @@ def validate(
             for t in res.trades:
                 t["ventana"] = w.n
                 t["r"] = trade_r(t, pair)
-                t["r_opposite"] = opposite_r(t, seg, pair, **costs)
+                t["r_opposite"] = opposite_r(t, seg, pair, **costs, max_hold_bars=max_hold)
             rows[name].append(_window_row(w, calculate_metrics(res.trades, eq, balance[name]), balance[name]))
             equities[name].append(eq)
             trades[name].extend(res.trades)

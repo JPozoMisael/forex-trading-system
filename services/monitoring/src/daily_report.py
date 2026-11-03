@@ -444,7 +444,8 @@ def _why_rows(plan: Dict[str, Any], gran_minutes: int) -> List[List[str]]:
     for side, name in (("long", "Compra"), ("short", "Venta")):
         seen = set()
         for f in (plan.get("factores") or {}).get(side, []):
-            text = _factor_text(f["dato"], float(f["valor"]), gran_minutes)
+            text = (f"{f['dato']}: sin dato todavía" if f.get("valor") is None
+                    else _factor_text(f["dato"], float(f["valor"]), gran_minutes))
             if text in seen:  # hora_sin y hora_cos son el mismo dato para el usuario
                 continue
             seen.add(text)
