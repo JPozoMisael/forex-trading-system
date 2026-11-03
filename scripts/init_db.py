@@ -27,7 +27,7 @@ import psycopg2
 from shared.config import settings
 
 ESQUEMA = os.path.join(ROOT, "infra", "postgres", "init.sql")
-TABLAS = ["schema_version", "candles", "signals", "orders",
+TABLAS = ["schema_version", "candles", "signals", "model_evaluations", "orders",
           "account_snapshots", "risk_events", "backtest_runs", "backtest_trades"]
 
 
