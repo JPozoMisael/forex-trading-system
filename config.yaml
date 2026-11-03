@@ -135,6 +135,42 @@ swing:
     financiamiento_anual_pct: 3.0
   pruebas_previas: 15
 
+# --------------------------------------------------------------------------
+# Setups de trader (TradingView). PRE-REGISTRADO el 2026-11-03, antes de programarlos
+# y de correr nada. Reglas para compras; las ventas son el espejo exacto.
+# "Tendencia" = la regla del reporte: alcista si precio > EMA 50 > EMA 200, bajista al
+# revés, si no mixta; H4 y diario solo con velas ya cerradas (ml/tradingview.py).
+# Señal con la vela H1 cerrada; entrada a la apertura de la siguiente.
+#   1. fibonacci: diario y H4 alcistas; último movimiento de 120 velas H1 de subida; el
+#      cierre está en la zona de retroceso 50 %-61.8 % y la vela es envolvente alcista o
+#      martillo. SL = inicio del movimiento (100 %) - 0.25 ATR. TP = extensión 127.2 %.
+#      Si TP < 1.5 x riesgo, no se opera.
+#   2. ema50: diario, H4 y H1 alcistas; el mínimo de la vela toca la EMA 50 de H1 y la
+#      vela cierra alcista por encima. SL = mínimo de las últimas 5 velas - 0.25 ATR.
+#      TP = 2 x riesgo.
+#   3. ruptura_londres: en las 3 primeras horas de Londres (8, 9 y 10 h de Londres), una
+#      vela cierra por encima del máximo de ayer (día UTC) y la anterior no; diario no
+#      bajista. SL = mínimo de esa vela - 0.25 ATR; si el riesgo supera 2 ATR no se
+#      opera. TP = 2 x riesgo.
+#   4. bollinger_rsi: diario "mixta"; la vela anterior cerró debajo de la banda inferior
+#      (20, 2) con RSI 14 < 30 y esta cierra dentro. SL = mínimo de las últimas 5 velas
+#      - 0.25 ATR. TP = 1.5 x riesgo.
+#   - Una operación a la vez por setup e instrumento; si a las 120 velas (5 días) no tocó
+#     SL ni TP, se cierra a mercado. Costes del instrumento + swap 3 % anual.
+#   - Una sola pasada: python backtesting/src/run_setups.py. Se evalúa el DESARROLLO
+#     (antes de validacion.inicio_prueba_final) y la PRUEBA FINAL por separado.
+#   - Para paper trading: veredicto VENTAJA CON EVIDENCIA o POSITIVO PERO NO CONCLUYENTE
+#     y retorno neto > 0 en LOS DOS periodos. Para dinero real, además VENTAJA CON
+#     EVIDENCIA en la prueba final con p < 0.05 / 37 (25 combinaciones previas + 12).
+setups:
+  nombres: [fibonacci, ema50, ruptura_londres, bollinger_rsi]
+  instrumentos: [EUR_USD, USD_JPY, XAU_USD]
+  temporalidad: H1
+  max_velas_abierta: 120
+  costes:
+    financiamiento_anual_pct: 3.0
+  pruebas_previas: 25
+
 # Instrumentos que opera el strategy-engine (cada uno con su modelo). Solo se
 # añaden los que cumplan la regla de arriba.
 # Resultado del 2026-10-28 (reports/20261028_1541_instrumentos.md): en H1 cumplen
