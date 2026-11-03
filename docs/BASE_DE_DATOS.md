@@ -10,7 +10,7 @@ PostgreSQL 13+ (probado en 16.4). TimescaleDB es **opcional**: si el servidor la
 | Dónde está la BD | Qué hacer |
 |---|---|
 | Docker local (`docker-compose-dev.yml`) | Nada: `init.sql` se ejecuta solo al crear el volumen. Si el volumen ya existía, `python scripts/init_db.py`. |
-| Dokploy / servidor | Crear la BD vacía (ya está hecha). Con `POSTGRES_*` en las variables de la app, abrir la terminal del contenedor y ejecutar `python /app/scripts/init_db.py`. |
+| Dokploy / servidor | Crear la BD vacía (ya está hecha). Nada más: `scripts/run_all.py` ejecuta `init_db.py` en cada arranque (log: "✅ Esquema de la BD al día"). A mano, si hace falta: `python /app/scripts/init_db.py` en la terminal del contenedor. |
 | Otra PC con Postgres | Si la BD aún no existe, ejecutar [00_create_database.sql](../infra/postgres/00_create_database.sql) como `postgres` (HeidiSQL o psql): crea el usuario `forex` y la BD vacía. Luego completar `POSTGRES_*` en `.env` y ejecutar `python scripts/init_db.py`. |
 | BD con el esquema v1 | `python scripts/init_db.py`: agrega lo nuevo sin perder datos. Si además venía de la versión OANDA antigua, antes correr `migrations/001_xm_mt5.sql`. |
 
