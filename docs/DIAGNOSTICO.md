@@ -4,7 +4,7 @@
 > `python scripts/diagnostico.py --guardar` y queda en [diagnosticos/](diagnosticos/).
 > Actualizar este archivo cada vez que se cierre o aparezca un pendiente.
 
-**Última revisión:** 2026-11-03 · 173 tests pasan.
+**Última revisión:** 2026-11-05 · 173 tests pasan.
 
 ## 1. Qué funciona hoy
 
@@ -43,6 +43,7 @@
 | P15 | Baja | Sin reentrenamiento programado: el modelo se queda fijo y **no aprende solo** de lo que pasa en vivo | Reentrenar cada 6 meses (como en la validación walk-forward) y registrar cada versión. Desde v3, `model_evaluations` guarda lo que vio cada hora: sirve para medir cada versión en vivo |
 | P17 | Baja | `init.sql` v3 (`model_evaluations`) no se probó todavía contra un Postgres real | Desde 2026-11-03, `scripts/run_all.py` aplica el esquema al arrancar: en el log del redeploy debe salir "✅ Esquema de la BD al día". Si sale "⚠️ init_db.py terminó con código…", revisar las líneas `init_db \|` del log |
 | P16 | **Alta** | El modelo v1 **no está calibrado**: en la prueba final, el % de horas que tocan el objetivo es casi igual en todos los tramos de probabilidad por debajo del 50 % (EUR_USD: 35 % tanto si dijo 27 % como 42 %). Sus probabilidades apenas separan horas buenas de malas, y los tramos de 50 % o más tienen muy pocas horas para concluir nada. En el oro, cualquier compra rindió ~40 % por la subida del oro, no por el modelo (`reports/20261103_0244_calibracion.md`) | Seguir tomando el paper trading como comprobación, no como ventaja. Mejorar la capacidad de separar (otros datos u otro objetivo) con protocolo pre-registrado; `run_calibracion.py` sirve para medir cada versión. Probado 2026-11-03: las herramientas de TradingView (`run_patrones.py`) tampoco separan, y los 4 setups de trader pre-registrados (`run_setups.py`) pierden en el desarrollo en los 3 instrumentos. En H1 con costes reales no se encontró ventaja; falta probar horizontes largos (tendencia de semanas, muchos instrumentos) u otras fuentes de datos |
+| P18 | Baja | El sistema opera poco (~2-3 operaciones al mes por instrumento) comparado con traders discrecionales que entran casi a diario (p. ej. compras de oro en M5). Es a propósito: solo entra si en la historia situaciones parecidas terminaron bien ≥ 50 % de las veces, y en M5/M15 los costes se comen la ventaja (oro M15: −4.6 % en la prueba final). Una operación ganadora de otro trader no prueba ventaja: faltan las perdedoras, el riesgo tomado y meses de historial | No bajar el umbral para operar más. Pedir a esos traders su historial completo de 3-6 meses (MT5: Historial → Informe) y analizarlo. Si son rentables y sus reglas se pueden describir, programarlas y validarlas con el mismo protocolo pre-registrado (15 años, costes reales, Bonferroni). Ideas pendientes de decisión para el oro: solo compras con diario alcista, o ruptura en la apertura de Londres/Nueva York |
 | P9 | Baja | `fakeredis` está en requirements pero no siempre instalado, así que `test_bus.py` se omite | `pip install -r requirements-local.txt` |
 
 ## 3. Riesgos a vigilar
