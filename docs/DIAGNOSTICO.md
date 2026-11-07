@@ -49,7 +49,8 @@
 ## 3. Riesgos a vigilar
 
 - **Sin evidencia suficiente para dinero real**: EUR_USD, USD_JPY y XAU_USD salieron positivos pero no concluyentes en la prueba final. Con 25 combinaciones probadas, el umbral para dinero real es p < 0.002 (Bonferroni), y la calibración (P16) indica que el modelo casi no separa horas buenas de malas. Mantener `DRY_RUN=true` y comparar el paper trading con `produccion.referencia_backtest` y con el acumulado en vivo del reporte.
-- **Cada prueba nueva sube la exigencia**: van 37 combinaciones probadas (incluidos los 4 setups de trader, ninguno aprobado); el umbral para dinero real es p < 0.00135. Pre-registrar en `config.yaml` antes de correr.
+- **Cada prueba nueva sube la exigencia**: van 38 combinaciones probadas (incluidos los 4 setups de trader y el retroceso al 50 % en oro M5, ninguno aprobado); el umbral para dinero real es p < 0.00132. Pre-registrar en `config.yaml` antes de correr.
+- **Scalping del oro (M5) con stop corto**: probado 2026-11-07 (`run_retroceso50.py`) a partir de las operaciones de un trader en demo. Pierde en los dos periodos (−0.50 R y −0.20 R por operación): con stop de ~2 USD los costes son ~0.31 R por operación y el objetivo se toca el 10 % de las veces. Dos operaciones ganadoras de otro trader no cambian esto sin su historial completo (P18).
 - Pendiente menor de la auditoría: en vivo, `MLStrategy` calcula las features dos veces por vela (`probabilities` y `explain`).
 - **Hora del servidor MT5**: XM usa GMT+2/+3 y `mt5_client.py` lo convierte a UTC. Cualquier código nuevo que lea velas de MT5 debe pasar por esa conversión.
 - **Credenciales**: el `.env` no viaja con git. Si se rota una clave (OANDA, Telegram, Gmail, Postgres de Dokploy), actualizarla en cada equipo y en Dokploy.

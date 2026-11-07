@@ -5,6 +5,19 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-11-06 (método de un amigo: retroceso al 50 % en oro M5) · DESKTOP-QQ3KOCN
+
+- Un amigo del usuario ganó 2 operaciones en demo el 04/11 (capturas en `assets/`).
+  - Vendió en 4 066.64 → 4 056.61 (+$100.30) y compró en 4 055.40 → 4 065.48 (+$100.80), con 0.10 lotes.
+  - La compra fue en el 50 % exacto del impulso 4 040 → 4 071, con stop de 2 USD (riesgo/beneficio ~1:5).
+- **Pre-registrado** (`config.yaml`, sección `retroceso_50`, commit `40c8ae6`) y probado una vez con 6 años de oro M5:
+  - Simulador con órdenes limitadas en `backtesting/src/retroceso50.py`; la prueba es `run_retroceso50.py`.
+  - **No cumple.** Desarrollo: 593 operaciones, 18 % aciertos, −0.50 R. Final: 611 operaciones, 23 % aciertos, −0.20 R.
+  - Causa: los costes (~0.31 R por operación con stop de ~2 USD) y el objetivo que solo se toca el 10 % de las veces.
+- La regla sí detectó el impulso del 04/11, pero lo midió desde 4 029 (no desde 4 040 como el amigo): el punto de partida del movimiento es una elección subjetiva.
+- Correo claro para cualquier persona con el resultado y las 4 operaciones de las últimas 2 semanas: `reports/20261107_0434_retroceso50/correo.html` (`--enviar` lo manda donde haya EMAIL_* en `.env`).
+- Van 38 combinaciones probadas.
+
 ## 2026-11-02 ("Lo que ve el modelo" en el reporte) · DESKTOP-QQ3KOCN
 
 - **El reporte muestra qué haría el modelo aunque no haya señal:**

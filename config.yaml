@@ -198,6 +198,10 @@ setups:
 #   - Criterio: el de los setups (veredicto positivo y retorno > 0 en LOS DOS periodos;
 #     dinero real: VENTAJA CON EVIDENCIA en la final con p < 0.05 / 38).
 #   - Las operaciones de las 2 últimas semanas se muestran como ejemplo; no cambian nada.
+# Resultado del 2026-11-07 (reports/20261107_0434_retroceso50/): NO cumple. Desarrollo:
+# 593 ops, 18 % aciertos, -0.50 R por operación. Final: 611 ops, 23 % aciertos, -0.20 R.
+# Con stop de ~2 USD, los costes (~0.67 USD/oz) son ~0.31 R por operación; el objetivo
+# (~3.9 R) se toca solo el 10 % de las veces. Total probado: 38 combinaciones.
 retroceso_50:
   instrumento: XAU_USD
   temporalidad: M5
