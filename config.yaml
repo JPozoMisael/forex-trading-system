@@ -175,6 +175,42 @@ setups:
     financiamiento_anual_pct: 3.0
   pruebas_previas: 25
 
+# --------------------------------------------------------------------------
+# Retroceso al 50 % en oro M5 (método de un trader en demo, 2026-11-04: venta en 4066.64 y
+# compra en 4055.40 = 50 % exacto del impulso 4040 -> 4071, stop corto, objetivo en la zona
+# del máximo). PRE-REGISTRADO el 2026-11-06, antes de programarlo y de mirar datos M5.
+# Compras descritas; las ventas son el espejo exacto. ATR = ATR 14 de M5.
+#   - Impulso (con la vela M5 cerrada t): en las últimas 48 velas (4 h), L = mínimo y H =
+#     máximo. Si H es posterior a L es un impulso alcista (si no, bajista). Vale si
+#     H - L >= 10 x ATR y el cierre de t está por encima del 50 %.
+#   - Orden de compra LIMITADA en el 50 %: E = L + 0.5 (H - L). Stop = nivel 61.8 %
+#     (L + 0.382 (H - L)) - 0.1 ATR. Objetivo = H (el máximo del impulso).
+#   - La orden vale 36 velas (3 h); se cancela si antes de llenarse el precio supera H.
+#     Una orden u operación a la vez.
+#   - Se llena cuando el ask toca E (precio medio + medio spread). En la vela del llenado
+#     solo se mira el stop (conservador). Si a las 48 velas (4 h) no tocó stop ni objetivo,
+#     se cierra a mercado.
+#   - Costes: spread y slippage del oro (shared/fx.py: 0.50 + 0.10 USD/oz) + comisión
+#     7 USD/lote ida y vuelta. Resultado en R (unidades del riesgo planeado).
+#   - Datos: XAU_USD M5 de Dukascopy, 6 años. DESARROLLO = antes de
+#     validacion.inicio_prueba_final; PRUEBA FINAL = después. Una sola pasada:
+#     python backtesting/src/run_retroceso50.py
+#   - Criterio: el de los setups (veredicto positivo y retorno > 0 en LOS DOS periodos;
+#     dinero real: VENTAJA CON EVIDENCIA en la final con p < 0.05 / 38).
+#   - Las operaciones de las 2 últimas semanas se muestran como ejemplo; no cambian nada.
+retroceso_50:
+  instrumento: XAU_USD
+  temporalidad: M5
+  anios: 6
+  ventana_impulso: 48
+  impulso_min_atr: 10
+  entrada_fib: 0.5
+  stop_fib: 0.618
+  stop_margen_atr: 0.1
+  validez_orden_velas: 36
+  max_velas_abierta: 48
+  pruebas_previas: 37
+
 # Instrumentos que opera el strategy-engine (cada uno con su modelo). Solo se
 # añaden los que cumplan la regla de arriba.
 # Resultado del 2026-10-28 (reports/20261028_1541_instrumentos.md): en H1 cumplen
