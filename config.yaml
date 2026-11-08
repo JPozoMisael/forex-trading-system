@@ -215,6 +215,35 @@ retroceso_50:
   max_velas_abierta: 48
   pruebas_previas: 37
 
+# --------------------------------------------------------------------------
+# Seguimiento de tendencia (ruptura de Donchian, estilo "Turtle"). PRE-REGISTRADO el
+# 2026-11-07, antes de programarlo y de mirar datos diarios. Reglas clásicas sin ajustar:
+#   - Velas DIARIAS, 8 instrumentos a la vez (cartera), cada uno por su cuenta.
+#   - Compra si el cierre supera el máximo de las 55 velas anteriores; venta si cae bajo el
+#     mínimo de las 55 anteriores. Entrada a la apertura siguiente.
+#   - Stop inicial a 2 ATR(20) de la entrada. Salida de una compra si el cierre cae bajo el
+#     mínimo de las 20 velas anteriores (a la apertura siguiente) o si toca el stop; espejo
+#     para ventas. Una posición a la vez por instrumento; nueva entrada solo con nueva ruptura.
+#   - Costes: spread y slippage de cada instrumento (shared/fx.py), comisión 7 USD/lote y
+#     swap 3 % anual del nocional por día abierta (conservador: se cobra en ambos sentidos).
+#   - Riesgo 1 % de la cuenta por operación; resultado en R. UNA sola combinación: se evalúa
+#     la cartera completa (todas las operaciones juntas). Desglose por instrumento solo como
+#     información.
+#   - 15 años de Dukascopy. DESARROLLO = antes de validacion.inicio_prueba_final; PRUEBA
+#     FINAL = después. Una sola pasada: python backtesting/src/run_tendencia.py
+#   - Criterio: veredicto positivo y retorno > 0 en LOS DOS periodos; dinero real: VENTAJA
+#     CON EVIDENCIA en la final con p < 0.05 / 39.
+tendencia:
+  instrumentos: [EUR_USD, GBP_USD, AUD_USD, NZD_USD, USD_JPY, USD_CAD, USD_CHF, XAU_USD]
+  temporalidad: D
+  anios: 15
+  entrada_velas: 55
+  salida_velas: 20
+  stop_atr: 2.0
+  atr_periodo: 20
+  financiamiento_anual_pct: 3.0
+  pruebas_previas: 38
+
 # Instrumentos que opera el strategy-engine (cada uno con su modelo). Solo se
 # añaden los que cumplan la regla de arriba.
 # Resultado del 2026-10-28 (reports/20261028_1541_instrumentos.md): en H1 cumplen
