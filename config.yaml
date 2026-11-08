@@ -233,6 +233,10 @@ retroceso_50:
 #     FINAL = después. Una sola pasada: python backtesting/src/run_tendencia.py
 #   - Criterio: veredicto positivo y retorno > 0 en LOS DOS periodos; dinero real: VENTAJA
 #     CON EVIDENCIA en la final con p < 0.05 / 39.
+# Resultado del 2026-11-08 (reports/20261108_0154_tendencia/): NO cumple. Desarrollo: 497 ops,
+# 25 % aciertos, -0.19 R por operación. Final: 134 ops, 19 % aciertos, -0.29 R. Antes de
+# costes queda en ~0 (+0.03 R y -0.06 R): no hay ventaja ni sin comisión ni swap (~0.22 R por
+# operación). Solo el oro gana en la final (+28.6 R), por su gran tendencia. Total: 39 combinaciones.
 tendencia:
   instrumentos: [EUR_USD, GBP_USD, AUD_USD, NZD_USD, USD_JPY, USD_CAD, USD_CHF, XAU_USD]
   temporalidad: D

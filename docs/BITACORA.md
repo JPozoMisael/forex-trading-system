@@ -5,6 +5,18 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-11-07 (seguimiento de tendencia de semanas, cartera de 8) · DESKTOP-QQ3KOCN
+
+- **Pre-registrado** (`config.yaml`, sección `tendencia`, commit `a496738`): ruptura de Donchian 55/20 con stop de 2 ATR en velas diarias.
+  - Cartera: EUR, GBP, AUD, NZD, JPY, CAD y CHF contra el USD, más el oro.
+  - Costes con swap 3 % anual. Una sola combinación (la cartera).
+  - Simulador en `backtesting/src/tendencia.py`; la prueba es `run_tendencia.py`.
+- **No cumple.** Desarrollo: 497 operaciones, 25 % aciertos, −0.19 R. Final: 134 operaciones, 19 % aciertos, −0.29 R.
+  - Antes de costes queda en cero (+0.03 R / −0.06 R): en las divisas de 2012 a 2026 no hubo tendencias que pagaran.
+  - La curva baja casi sin pausa desde 2015.
+  - Solo el oro gana en la final (+28.6 R), por su gran subida.
+- Van **39 combinaciones probadas**: corto plazo (H1, M5, setups, TradingView, modelo) y ahora tendencia de semanas. Ninguna con ventaja después de costes.
+
 ## 2026-11-06 (método de un amigo: retroceso al 50 % en oro M5) · DESKTOP-QQ3KOCN
 
 - Un amigo del usuario ganó 2 operaciones en demo el 04/11 (capturas en `assets/`).
