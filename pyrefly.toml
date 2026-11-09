@@ -1,0 +1,11 @@
+# Rutas de importación para el analizador del editor (Pyrefly).
+# Replica lo que hacen los main.py, los scripts y tests/conftest.py con sys.path.
+search-path = [
+    ".",
+    "backtesting/src",
+    "services/data-collector/src",
+    "services/strategy-engine/src",
+    "services/risk-manager/src",
+    "services/execution-engine/src",
+    "services/monitoring/src",
+]

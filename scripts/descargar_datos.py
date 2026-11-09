@@ -33,7 +33,7 @@ def revisar_calidad(df: pd.DataFrame, granularity: str) -> list:
         problemas.append("las velas no están en orden cronológico")
     imposibles = (df["high"] < df[["open", "close"]].max(axis=1)) | (df["low"] > df[["open", "close"]].min(axis=1))
     if imposibles.any():
-        problemas.append(f"{int(imposibles.sum())} velas con high/low incoherentes")
+        problemas.append(f"{imposibles.sum()} velas con high/low incoherentes")
     if (df[["open", "high", "low", "close"]] <= 0).any().any():
         problemas.append("hay precios <= 0")
 
@@ -41,7 +41,8 @@ def revisar_calidad(df: pd.DataFrame, granularity: str) -> list:
     bar = pd.Timedelta(minutes=GRANULARITY_MINUTES[granularity])
     saltos = df.index.to_series().diff()
     grandes = saltos[saltos > 6 * bar]
-    entre_semana = grandes[~((grandes.index.dayofweek.isin([6, 0])) & (grandes <= pd.Timedelta(days=3)))]
+    dia = pd.DatetimeIndex(grandes.index).dayofweek
+    entre_semana = grandes[~(dia.isin([6, 0]) & (grandes <= pd.Timedelta(days=3)))]
     if len(entre_semana):
         problemas.append(
             f"{len(entre_semana)} huecos entre semana de más de {6 * bar} "
