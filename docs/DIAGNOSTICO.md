@@ -4,7 +4,7 @@
 > `python scripts/diagnostico.py --guardar` y queda en [diagnosticos/](diagnosticos/).
 > Actualizar este archivo cada vez que se cierre o aparezca un pendiente.
 
-**Última revisión:** 2026-11-05 · 173 tests pasan.
+**Última revisión:** 2026-11-09 · 173 tests pasan.
 
 ## 1. Qué funciona hoy
 
@@ -48,7 +48,9 @@
 
 ## 3. Riesgos a vigilar
 
-- **Sin evidencia suficiente para dinero real**: EUR_USD, USD_JPY y XAU_USD salieron positivos pero no concluyentes en la prueba final. Con 25 combinaciones probadas, el umbral para dinero real es p < 0.002 (Bonferroni), y la calibración (P16) indica que el modelo casi no separa horas buenas de malas. Mantener `DRY_RUN=true` y comparar el paper trading con `produccion.referencia_backtest` y con el acumulado en vivo del reporte.
+- **Plan decidido el 2026-11-09 (revisión el 2027-02-09)**: el sistema sigue en simulación sin cambios; **no se prueban estrategias nuevas** hasta la revisión (cada prueba sube la exigencia); el usuario opera a mano en su demo de XM (1 % de riesgo, stop siempre, anotar el motivo) y exporta cada mes el informe de historial de MT5 para analizarlo con el mismo rigor. En la revisión se decide con la tabla de calibración en vivo y esas estadísticas. Dinero real solo con evidencia.
+- **Calibración en vivo (primeras ~2 semanas, reporte del 2026-11-09)**: va al revés. EUR_USD compra: el tramo 40–50 % tocó el objetivo el 21 % frente al 40 % del tramo < 40 %; venta 40–50 %: 8 %. Oro compra < 40 %: 69 %. Pocas horas y correlacionadas, pero coincide con P16.
+- **Sin evidencia suficiente para dinero real**: EUR_USD, USD_JPY y XAU_USD salieron positivos pero no concluyentes en la prueba final. Con 39 combinaciones probadas, el umbral para dinero real es p < 0.00128 (Bonferroni), y la calibración (P16) indica que el modelo casi no separa horas buenas de malas. Mantener `DRY_RUN=true` y comparar el paper trading con `produccion.referencia_backtest` y con el acumulado en vivo del reporte.
 - **Cada prueba nueva sube la exigencia**: van 39 combinaciones probadas (4 setups de trader, retroceso al 50 % en oro M5 y seguimiento de tendencia Donchian 55/20 en 8 instrumentos, ninguno aprobado); el umbral para dinero real es p < 0.00128. Pre-registrar en `config.yaml` antes de correr.
 - **Tendencia de semanas tampoco**: la cartera de 8 queda en ~0 R antes de costes y pierde después (2026-11-08, `run_tendencia.py`). Con esto, ninguna escala de tiempo probada (M5, H1, H4, diario) da ventaja en estas divisas de 2012 a 2026.
 - **Scalping del oro (M5) con stop corto**: probado 2026-11-07 (`run_retroceso50.py`) a partir de las operaciones de un trader en demo. Pierde en los dos periodos (−0.50 R y −0.20 R por operación): con stop de ~2 USD los costes son ~0.31 R por operación y el objetivo se toca el 10 % de las veces. Dos operaciones ganadoras de otro trader no cambian esto sin su historial completo (P18).

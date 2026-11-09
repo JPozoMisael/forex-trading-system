@@ -5,6 +5,16 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-11-09 (plan hasta febrero) · DESKTOP-QQ3KOCN
+
+- Reportes de 1:30 y 8:00 sin señal (máximo 46 %). La tabla de calibración en vivo va al revés: EUR_USD compra 40–50 % tocó objetivo el 21 % frente al 40 % con < 40 %; oro compra < 40 %: 69 %. Coincide con P16.
+- **Plan decidido con el usuario (revisión el 2027-02-09):**
+  - El sistema sigue en simulación sin cambios. No se prueban estrategias nuevas hasta la revisión (van 39).
+  - El usuario opera a mano en su demo de XM: 1 % de riesgo, stop siempre, anotar el motivo. Cada mes manda el informe de historial de MT5 (Historial → Informe) y se analiza: expectativa, profit factor, drawdown, p-valor.
+  - En la revisión se decide con la calibración en vivo y esas estadísticas. Dinero real solo con evidencia.
+- Pendiente del usuario: volumen `/app/models` en Dokploy (P13) y rotar la contraseña de Postgres.
+- **Siguiente paso:** cuando llegue el primer informe de MT5, analizarlo (si hace falta, un script que lea el HTML del informe).
+
 ## 2026-11-07 (seguimiento de tendencia de semanas, cartera de 8) · DESKTOP-QQ3KOCN
 
 - **Pre-registrado** (`config.yaml`, sección `tendencia`, commit `a496738`): ruptura de Donchian 55/20 con stop de 2 ATR en velas diarias.
