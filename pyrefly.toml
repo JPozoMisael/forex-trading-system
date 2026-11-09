@@ -9,3 +9,5 @@ search-path = [
     "services/execution-engine/src",
     "services/monitoring/src",
 ]
+# research/colab es el script original de Google Colab (solo referencia, depende de Colab)
+project-excludes = ["research/**", "**/.[!/.]*", "**/*venv/**", "**/__pycache__", "**/node_modules"]
