@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(ROOT, "backtesting", "src"))
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+import numpy as np
 import pandas as pd
 
 from data_loader import dukascopy_cache_path, load_from_dukascopy
@@ -31,7 +32,9 @@ def revisar_calidad(df: pd.DataFrame, granularity: str) -> list:
         problemas.append(f"{df.index.duplicated().sum()} velas duplicadas")
     if not df.index.is_monotonic_increasing:
         problemas.append("las velas no están en orden cronológico")
-    imposibles = (df["high"] < df[["open", "close"]].max(axis=1)) | (df["low"] > df[["open", "close"]].min(axis=1))
+    techo = np.maximum(df["open"], df["close"])
+    piso = np.minimum(df["open"], df["close"])
+    imposibles = (df["high"] < techo) | (df["low"] > piso)
     if imposibles.any():
         problemas.append(f"{imposibles.sum()} velas con high/low incoherentes")
     if (df[["open", "high", "low", "close"]] <= 0).any().any():
@@ -39,14 +42,17 @@ def revisar_calidad(df: pd.DataFrame, granularity: str) -> list:
 
     # Huecos dentro de la semana (el mercado cierra viernes ~21:00 UTC y abre domingo ~21:00 UTC)
     bar = pd.Timedelta(minutes=GRANULARITY_MINUTES[granularity])
-    saltos = df.index.to_series().diff()
-    grandes = saltos[saltos > 6 * bar]
-    dia = pd.DatetimeIndex(grandes.index).dayofweek
-    entre_semana = grandes[~(dia.isin([6, 0]) & (grandes <= pd.Timedelta(days=3)))]
-    if len(entre_semana):
+    idx = pd.DatetimeIndex(df.index)
+    despues = idx[1:]
+    saltos = pd.TimedeltaIndex(despues - idx[:-1])
+    fin_de_semana = despues.dayofweek.isin([6, 0]) & (saltos <= pd.Timedelta(days=3))
+    hueco = (saltos > 6 * bar) & ~fin_de_semana
+    huecos, cuando = saltos[hueco], despues[hueco]
+    if len(huecos):
+        mayor = int(huecos.argmax())
         problemas.append(
-            f"{len(entre_semana)} huecos entre semana de más de {6 * bar} "
-            f"(mayor: {entre_semana.max()} antes de {entre_semana.idxmax()}; suelen ser feriados)"
+            f"{len(huecos)} huecos entre semana de más de {6 * bar} "
+            f"(mayor: {huecos[mayor]} antes de {cuando[mayor]}; suelen ser feriados)"
         )
     return problemas
 
@@ -64,7 +70,7 @@ def main():
     if df.empty:
         sys.exit(f"[x] No hay datos de {args.pair} {gran}.")
 
-    años = (df.index[-1] - df.index[0]).days / 365.25
+    años = (pd.Timestamp(df.index[-1]) - pd.Timestamp(df.index[0])).days / 365.25
     print(f"\n[v] {args.pair} {gran}: {len(df):,} velas | {df.index[0]:%Y-%m-%d %H:%M} a {df.index[-1]:%Y-%m-%d %H:%M} UTC ({años:.1f} años)")
     print(f"[i] Archivo: {dukascopy_cache_path(args.pair, gran)}")
     if "spread_pips" in df:
