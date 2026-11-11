@@ -11,6 +11,12 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 - **`scripts/operacion_prueba.py`**: manda una señal de estrategia `prueba` (stop 0.5 ATR, objetivo 1.5x, GBP_USD por defecto) que pasa por el risk-manager y el execution-engine y manda todos los correos. No cuenta en el balance simulado ni en las estadísticas (`TEST_STRATEGY` en `shared/models.py`). Se niega sin `DRY_RUN=true`.
 - Uso en el servidor, tras el redeploy: terminal del contenedor en Dokploy → `python scripts/operacion_prueba.py` (`--par EUR_USD --venta` para otra).
 - 209 tests pasan.
+- **Operación de práctica en cada reporte** (pedido del usuario: "nos empezamos a equivocar, hacemos pruebas y vamos mejorando"):
+  - En cada turno de `REPORT_TIMES` (1:30 y 8:00), el monitoring elige entre los instrumentos que opera el modelo la compra o venta de **mayor probabilidad aunque no llegue al 50 %**, saltando los que tienen posición abierta o el análisis viejo (`services/monitoring/src/practice.py`).
+  - Se manda como señal de estrategia `practica` justo después del reporte, con los mismos SL/TP del modelo (2 y 3 ATR) y el 1 % de riesgo. Pasa por el risk-manager y el execution-engine y manda los correos de siempre; el de cierre dice "Práctica".
+  - Se cuenta **aparte**: no mueve el balance simulado, no entra en el acumulado del modelo, no bloquea sus señales (`SIDE_STRATEGIES`). El reporte trae la sección "🎯 Operación de práctica" con su acumulado. Solo con `DRY_RUN`; se apaga con `ENABLE_PRACTICE_TRADES=false`. El envío manual (`--enviar`) no abre práctica.
+  - Ojo al leer el resultado: la calibración en vivo dice que estas operaciones aciertan ~35-40 % y el empate con costos está en ~45 %. Sirve para medir, no se espera que gane.
+  - 214 tests pasan.
 
 ## 2026-11-09 (plan hasta febrero) · DESKTOP-QQ3KOCN
 

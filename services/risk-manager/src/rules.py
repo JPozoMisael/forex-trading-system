@@ -21,6 +21,7 @@ from shared.models import (
     AccountSummary,
     OrderSide,
     RiskAssessment,
+    SIDE_STRATEGIES,
     Signal,
     SignalDirection,
     SymbolSpec,
@@ -151,11 +152,19 @@ class RiskRulesEngine:
     def _reset_connection(self):
         self.close()
 
-    def get_active_pairs(self) -> List[str]:
-        """Pares con órdenes activas (reservadas, enviándose o abiertas). Lanza excepción si la BD falla."""
+    def get_active_pairs(self, include_side: bool = True) -> List[str]:
+        """
+        Pares con órdenes activas (reservadas, enviándose o abiertas). Lanza excepción si la BD falla.
+        include_side=False no cuenta las de prueba/práctica: no bloquean las señales del modelo.
+        """
+        query = "SELECT pair FROM orders WHERE status = ANY(%s)"
+        params = [list(ACTIVE_ORDER_STATUSES)]
+        if not include_side:
+            query += " AND (strategy_name IS NULL OR NOT strategy_name = ANY(%s))"
+            params.append(SIDE_STRATEGIES)
         try:
             with self._get_connection().cursor() as cur:
-                cur.execute("SELECT pair FROM orders WHERE status = ANY(%s);", (list(ACTIVE_ORDER_STATUSES),))
+                cur.execute(query + ";", params)
                 return [r[0] for r in cur.fetchall()]
         except Exception:
             self._reset_connection()
@@ -171,7 +180,7 @@ class RiskRulesEngine:
 
     def assess(self, signal: Signal) -> RiskAssessment:
         try:
-            active_pairs = self.get_active_pairs()
+            active_pairs = self.get_active_pairs(include_side=signal.strategy_name in SIDE_STRATEGIES)
             account = self.get_account()
             spec = self.get_symbol_spec(signal.pair)
         except Exception as e:

@@ -136,6 +136,9 @@ class Settings:
     # Calendario económico en el reporte (noticias de impacto alto de las monedas operadas)
     enable_econ_calendar: bool = _get_bool("ENABLE_ECON_CALENDAR", "true")
     econ_calendar_url: str = os.getenv("ECON_CALENDAR_URL", "https://nfs.faireconomy.media/ff_calendar_thisweek.json")
+    # Operación de práctica en cada reporte: la de mayor probabilidad del modelo aunque no llegue
+    # al umbral. Solo con DRY_RUN; se mide aparte y no mueve el balance simulado.
+    enable_practice_trades: bool = _get_bool("ENABLE_PRACTICE_TRADES", "true")
 
     # Streams de Redis (persistentes: un servicio caído no pierde mensajes)
     channel_market_candle: str = "market:candle"          # Nueva vela cerrada (sufijo :PAR)

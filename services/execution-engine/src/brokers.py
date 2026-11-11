@@ -17,7 +17,7 @@ from psycopg2.extras import RealDictCursor
 from shared.config import settings
 from shared.fx import get_pip_size, instrument_costs, pnl_in_usd, simulated_symbol_spec
 from shared.logger import get_logger
-from shared.models import TEST_STRATEGY, AccountSummary, OrderRequest, OrderSide, SymbolSpec
+from shared.models import SIDE_STRATEGIES, AccountSummary, OrderRequest, OrderSide, SymbolSpec
 
 log = get_logger(__name__)
 
@@ -148,13 +148,14 @@ class SimulatedBroker(Broker):
 
     def account_summary(self) -> Optional[AccountSummary]:
         with self._cursor() as cur:
-            # Las operaciones de prueba no mueven la cuenta simulada
+            # Las operaciones de prueba y de práctica no mueven la cuenta simulada
+            model_only = "AND (strategy_name IS NULL OR NOT strategy_name = ANY(%s))"
             cur.execute("SELECT COALESCE(SUM(pnl), 0) AS pnl FROM orders WHERE status = 'closed' AND execution_mode = 'sim' "
-                        "AND strategy_name IS DISTINCT FROM %s;", (TEST_STRATEGY,))
+                        f"{model_only};", (SIDE_STRATEGIES,))
             realized = float(cur.fetchone()["pnl"])
             cur.execute(
                 "SELECT pair, direction, units, entry_price FROM orders WHERE status = 'filled' AND execution_mode = 'sim' "
-                "AND strategy_name IS DISTINCT FROM %s;", (TEST_STRATEGY,)
+                f"{model_only};", (SIDE_STRATEGIES,)
             )
             open_rows = cur.fetchall()
 

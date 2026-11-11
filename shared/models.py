@@ -10,6 +10,10 @@ from pydantic import BaseModel, Field
 # Estrategia de las operaciones de prueba (scripts/operacion_prueba.py): recorren todo el
 # sistema y mandan sus correos, pero no cuentan en el balance simulado ni en las estadísticas.
 TEST_STRATEGY = "prueba"
+# Operación de práctica de cada reporte (la de mayor probabilidad aunque no llegue al umbral):
+# se mide aparte del modelo y tampoco mueve el balance simulado ni bloquea sus señales.
+PRACTICE_STRATEGY = "practica"
+SIDE_STRATEGIES = [TEST_STRATEGY, PRACTICE_STRATEGY]
 
 
 class SignalDirection(str, Enum):

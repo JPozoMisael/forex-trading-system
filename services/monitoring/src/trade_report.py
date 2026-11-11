@@ -16,6 +16,7 @@ from charts import (DOWN, GRID, SURFACE, TEXT_PRIMARY, TEXT_SECONDARY, UP, digit
 from shared.config import GRANULARITY_MINUTES, settings
 from shared.fx import quote_to_usd_rate
 from shared.logger import get_logger
+from shared.models import PRACTICE_STRATEGY
 from shared.timefmt import fmt_local, zona
 
 log = get_logger(__name__)
@@ -106,11 +107,14 @@ def build_trade_email(t: Dict[str, Any], has_chart: bool) -> Tuple[str, str, str
     r_txt = f"{t['r']:+.2f} R" if t.get("r") is not None else "-"
     dur = duration_text(t["duration_minutes"]) if t.get("duration_minutes") is not None else "-"
 
-    subject = (f"[{'Operación ganadora' if won else 'Operación cerrada con pérdida'}] {display_name(pair)} {side} · "
+    practice = t.get("strategy") == PRACTICE_STRATEGY
+    tag = "Práctica · " if practice else ""
+    subject = (f"[{tag}{'Operación ganadora' if won else 'Operación cerrada con pérdida'}] {display_name(pair)} {side} · "
                f"{reason} · {money} ({move_text(pair, move, signed=True)})")
     esperaba = "subiera" if buy else "bajara"
     hizo = ("subió" if exit_p > entry else "bajó") if exit_p is not None else "se movió"
-    story = (f"El modelo abrió una {side} de {display_name(pair)} el {fmt_local(t['opened_at'])} a {entry:.{d}f}, "
+    who = "Como práctica del reporte, el sistema abrió" if practice else "El modelo abrió"
+    story = (f"{who} una {side} de {display_name(pair)} el {fmt_local(t['opened_at'])} a {entry:.{d}f}, "
              f"esperando que el precio {esperaba}. El precio {hizo} y la operación se cerró por {reason} el "
              f"{fmt_local(t['closed_at'])} a {exit_p:.{d}f}" if exit_p is not None else "")
     story += f", {'ganando' if won else 'perdiendo'} {money.lstrip('+−')} ({move_text(pair, move)}). Duró {dur}."

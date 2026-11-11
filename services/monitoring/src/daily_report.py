@@ -40,7 +40,7 @@ from charts import (DOWN, DPI, EMA_COLORS, GRID, REFERENCE, SURFACE, TEXT_PRIMAR
 from review import hour_rows, last_hours, live_calibration, resolve_all, summary_text
 from shared.config import GRANULARITY_MINUTES, settings
 from shared.logger import get_logger
-from shared.models import TEST_STRATEGY
+from shared.models import PRACTICE_STRATEGY, SIDE_STRATEGIES, TEST_STRATEGY
 from shared.timefmt import fmt_fecha, fmt_hora, fmt_local, local_tz, to_local, zona
 
 log = get_logger(__name__)
@@ -78,6 +78,7 @@ class ReportData:
     review: bool = False
     evaluations: pd.DataFrame = field(default_factory=pd.DataFrame)
     review_candles: pd.DataFrame = field(default_factory=pd.DataFrame)
+    practice_closed: pd.DataFrame = field(default_factory=pd.DataFrame)  # operaciones de práctica cerradas
 
 
 # ---------------------------------------------------------------- cálculos
@@ -553,12 +554,41 @@ def timeframe_rows(data: ReportData) -> List[List[str]]:
     return rows
 
 
-def build_report(datas, events: Optional[List[Dict[str, Any]]] = ()) -> Tuple[str, str, str]:
+def _practice_section(practice, datas: List[ReportData]) -> Tuple[str, List[str]]:
+    """(texto de la operación de práctica de este turno, líneas del acumulado de la práctica)."""
+    if practice is None:
+        text = ("Esta vez no se abre operación de práctica: ningún instrumento tiene el análisis al día o todos tienen "
+                "ya una posición abierta.")
+    else:
+        dg = _digits(practice.pair)
+        side = "COMPRA" if practice.buy else "VENTA"
+        text = (f"Se abre ahora una {side} de {display_name(practice.pair)}: es la probabilidad más alta de este reporte "
+                f"({practice.prob * 100:.0f} %; el modelo pide {practice.umbral * 100:.0f} % para operar de verdad). "
+                f"Entrada ~{practice.entry:.{dg}f}, stop en {practice.stop_loss:.{dg}f} "
+                f"({move_text(practice.pair, practice.stop_loss - practice.entry)}) y objetivo en "
+                f"{practice.take_profit:.{dg}f} ({move_text(practice.pair, practice.take_profit - practice.entry)}). "
+                f"En unos segundos te llegan los correos de señal y de orden, y al cerrarse el del resultado con su "
+                f"gráfico. Es práctica: se cuenta aparte del modelo y no mueve el balance simulado.")
+    parts = [d.practice_closed for d in datas if not d.practice_closed.empty]
+    closed = pd.concat(parts, ignore_index=True).sort_values("closed_at") if parts else pd.DataFrame()
+    st = trade_stats(closed, datas[0].initial_balance)
+    if not st["operaciones"]:
+        return text, ["Práctica acumulada: ninguna cerrada todavía."]
+    exp = f", expectativa {st['expectativa_r']:+.2f} R" if st.get("expectativa_r") is not None else ""
+    return text, [f"Práctica acumulada: {st['operaciones']} cerradas, {st['ganadas']} ganadas ({st['win_rate']:.0f} %), "
+                  f"resultado {_fmt_money(st['pnl'])}{exp}. Para empatar con los costos hace falta acertar ~45 % "
+                  f"(el objetivo es 1.5 veces el stop)."]
+
+
+def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=None,
+                 practice_on: bool = False) -> Tuple[str, str, str]:
     """
     (asunto, html, texto plano) para uno o varios instrumentos. El HTML
     referencia cada gráfico como cid:grafico_<PAR>. Estado del sistema, cuenta
     y acumulado salen del primero (son comunes a todos).
     `events`: noticias de econ_calendar.upcoming (None = no se pudo leer el calendario).
+    `practice`: la operación de práctica de este turno (practice.Practice) o None; la sección
+    solo sale con `practice_on`.
     """
     datas = [datas] if isinstance(datas, ReportData) else list(datas)
     first = datas[0]
@@ -576,8 +606,10 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = ()) -> Tuple[st
     signals = [f"{s['name']} {s['short']}" for s in sections if s["short"].startswith("SEÑAL")]
     soon = [e for e in (events or []) if e["cuando"] <= first.now + timedelta(hours=12)]
     news = f" · 📰 {soon[0]['titulo']} {fmt_hora(soon[0]['cuando'])}" if soon else ""
+    practice_tag = (f" · 🎯 práctica: {'COMPRA' if practice.buy else 'VENTA'} {display_name(practice.pair)} "
+                    f"{practice.prob * 100:.0f} %" if practice_on and practice is not None else "")
     subject = (f"[{title}] {fmt_local(first.now)} · {'✅ sistema OK' if ok else '⚠️ revisar sistema'} · "
-               f"{', '.join(signals) if signals else 'sin señales'} · {n_open} posición(es) abierta(s){news}")
+               f"{', '.join(signals) if signals else 'sin señales'}{practice_tag} · {n_open} posición(es) abierta(s){news}")
     when = f"Reporte del {fmt_local(first.now)} ({zona()}). Todas las horas de este correo están en {zona()}."
     sessions_now = (f"Sesiones abiertas ahora: {', '.join(sessions) or 'ninguna (sesión de Asia)'}. "
                     f"{sessions_local_text(first.now)} ({zona()}).")
@@ -621,6 +653,13 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = ()) -> Tuple[st
     lines += ["", "NOTICIAS DE IMPACTO ALTO (próximas 24 h):"]
     lines += [f"  {r[0]} · {r[1]} · {r[2]} (previsión {r[3]}, anterior {r[4]}) → {r[5]}" for r in news_rows]
     lines += [f"  {news_note}"]
+    practice_html = ""
+    if practice_on:
+        practice_text, practice_stats = _practice_section(practice, datas)
+        lines += ["", "🎯 OPERACIÓN DE PRÁCTICA:", f"  {practice_text}"] + [f"  {t}" for t in practice_stats]
+        practice_html = (f"<h2 style='font-size:15px;margin:22px 0 8px;color:{TEXT_PRIMARY}'>🎯 Operación de práctica</h2>"
+                         + "".join(f"<p style='font-size:13px;margin:0 0 8px'>{t}</p>"
+                                   for t in [practice_text] + practice_stats))
     lines += ["", sessions_now]
     for s in sections:
         lines += ["", f"== {s['name']} · precio {s['close']} ==", f"MODELO: {s['detail']}"] + ([f"  {s['ref']}"] if s["ref"] else [])
@@ -712,6 +751,7 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = ()) -> Tuple[st
 <h2 {h2}>📰 Noticias de impacto alto (próximas 24 h)</h2>
 {table(["Hora", "Moneda", "Noticia", "Previsión", "Anterior", "Afecta a"], news_rows) if news_rows else ""}
 <p style="font-size:12px;color:{TEXT_SECONDARY};margin:6px 0 0">{news_note}</p>
+{practice_html}
 {''.join(parts)}
 {live_html}
 
@@ -736,14 +776,17 @@ def _load_pair(conn, pair: str, gran: str):
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("SELECT * FROM orders WHERE pair = %s AND status = 'filled' ORDER BY opened_at", (pair,))
         open_orders = pd.DataFrame(cur.fetchall())
-        # Las operaciones de prueba no cuentan en las estadísticas
+        # Las de prueba no cuentan en nada; las de práctica se cuentan aparte del modelo
         cur.execute("SELECT * FROM orders WHERE pair = %s AND status = 'closed' AND strategy_name IS DISTINCT FROM %s "
                     "ORDER BY closed_at", (pair, TEST_STRATEGY))
         closed = pd.DataFrame(cur.fetchall())
+    is_side = closed["strategy_name"].isin(SIDE_STRATEGIES) if "strategy_name" in closed else pd.Series(False, index=closed.index)
+    practice = closed[is_side].reset_index(drop=True)
+    closed = closed[~is_side].reset_index(drop=True)
     if not candles.empty:
         candles["timestamp"] = pd.to_datetime(candles["timestamp"], utc=True)
         candles = candles.set_index("timestamp").sort_index().astype(float)
-    return candles, open_orders, closed
+    return candles, open_orders, closed, practice
 
 
 def collect_timeframes(pair: str, now: datetime, skip: str = "", fetch=None) -> Dict[str, pd.DataFrame]:
@@ -812,7 +855,7 @@ def collect(bus, checker, now: Optional[datetime] = None, review: bool = False) 
     out = []
     try:
         for pair in settings.forex_pairs:
-            candles, open_orders, closed = _load_pair(conn, pair, gran)
+            candles, open_orders, closed, practice = _load_pair(conn, pair, gran)
             if candles.empty:
                 log.warning(f"Reporte: no hay velas de {pair} {gran} en la BD; se omite.")
                 continue
@@ -822,7 +865,7 @@ def collect(bus, checker, now: Optional[datetime] = None, review: bool = False) 
                 strategy_state=bus.get_json(f"{settings.key_strategy_state_prefix}{pair}"), account=account,
                 open_orders=open_orders, closed_orders=closed, initial_balance=settings.sim_initial_balance,
                 timeframes=collect_timeframes(pair, now, skip=gran),
-                review=review, evaluations=evaluations, review_candles=review_candles,
+                review=review, evaluations=evaluations, review_candles=review_candles, practice_closed=practice,
             ))
     finally:
         conn.close()
@@ -832,17 +875,26 @@ def collect(bus, checker, now: Optional[datetime] = None, review: bool = False) 
 
 
 def send_daily_report(email, telegram, bus, checker, now: Optional[datetime] = None,
-                      review: Optional[bool] = None) -> bool:
-    """`review`: incluir el repaso de 24 h; None = según REPORT_REVIEW_TIMES (el turno de ahora)."""
+                      review: Optional[bool] = None, practice: bool = True) -> bool:
+    """
+    `review`: incluir el repaso de 24 h; None = según REPORT_REVIEW_TIMES (el turno de ahora).
+    `practice`: abrir la operación de práctica del turno (si ENABLE_PRACTICE_TRADES y DRY_RUN).
+    """
     from econ_calendar import calendar_for_report
+    from practice import pick_practice, practice_enabled, publish_practice
 
     review = review_due(now or datetime.now(timezone.utc)) if review is None else review
     datas = collect(bus, checker, now, review=review)
     events = calendar_for_report([d.pair for d in datas], datas[0].now)
+    practice_on = practice and practice_enabled()
+    chosen = pick_practice(datas, datas[0].now) if practice_on else None
     images = report_images(datas)  # antes del texto: si un gráfico falla, el HTML no lo referencia
-    subject, html, text = build_report(datas, events)
+    subject, html, text = build_report(datas, events, practice=chosen, practice_on=practice_on)
     sent = email.send_html(subject, html, text, images=images)
     telegram.send_message(text.replace("_", "/"))  # "_" rompe el Markdown de Telegram
+    if chosen is not None:
+        # Después del reporte: los correos de señal y de orden llegan justo detrás
+        publish_practice(bus, chosen, datas[0].now)
     return sent
 
 
@@ -874,7 +926,7 @@ def main():
             print(f"[v] {subject}\n    -> {out / 'reporte.html'}")
         elif args.enviar:
             # Envío manual (para probar): siempre con el repaso de las últimas 24 h
-            ok = send_daily_report(EmailNotifier(), TelegramNotifier(), bus, checker, review=True)
+            ok = send_daily_report(EmailNotifier(), TelegramNotifier(), bus, checker, review=True, practice=False)
             print("[v] Reporte enviado" if ok else "[x] No se pudo enviar el email (ver log)")
         else:
             parser.print_help()

@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirna
 from shared.config import settings
 from shared.logger import get_logger
 from shared.bus import EventBus
+from shared.models import SIDE_STRATEGIES
 
 from telegram_alerts import TelegramNotifier
 from email_alerts import EmailNotifier
@@ -65,15 +66,17 @@ DUPLICATE_POSITION_REASON = "Ya existe una posición activa"
 
 
 def _position_open_before(pair: str, when: Any) -> bool:
-    """¿Hay una posición de `pair` ya ejecutada (filled) antes de `when`? Ante error de BD: False (se avisa)."""
+    """¿Hay una posición del modelo en `pair` ya ejecutada (filled) antes de `when`? Ante error de BD: False (se avisa)."""
     import psycopg2
 
     try:
         conn = psycopg2.connect(settings.postgres_dsn, connect_timeout=3)
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT 1 FROM orders WHERE pair = %s AND status = 'filled' AND opened_at < %s LIMIT 1;",
-                            (pair, when))
+                # Las de prueba/práctica no bloquean al modelo: su señal sí se avisa
+                cur.execute("SELECT 1 FROM orders WHERE pair = %s AND status = 'filled' AND opened_at < %s "
+                            "AND (strategy_name IS NULL OR NOT strategy_name = ANY(%s)) LIMIT 1;",
+                            (pair, when, SIDE_STRATEGIES))
                 return cur.fetchone() is not None
         finally:
             conn.close()
