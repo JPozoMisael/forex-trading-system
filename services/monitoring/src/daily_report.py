@@ -40,6 +40,7 @@ from charts import (DOWN, DPI, EMA_COLORS, GRID, REFERENCE, SURFACE, TEXT_PRIMAR
 from review import hour_rows, last_hours, live_calibration, resolve_all, summary_text
 from shared.config import GRANULARITY_MINUTES, settings
 from shared.logger import get_logger
+from shared.models import TEST_STRATEGY
 from shared.timefmt import fmt_fecha, fmt_hora, fmt_local, local_tz, to_local, zona
 
 log = get_logger(__name__)
@@ -735,7 +736,9 @@ def _load_pair(conn, pair: str, gran: str):
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("SELECT * FROM orders WHERE pair = %s AND status = 'filled' ORDER BY opened_at", (pair,))
         open_orders = pd.DataFrame(cur.fetchall())
-        cur.execute("SELECT * FROM orders WHERE pair = %s AND status = 'closed' ORDER BY closed_at", (pair,))
+        # Las operaciones de prueba no cuentan en las estadísticas
+        cur.execute("SELECT * FROM orders WHERE pair = %s AND status = 'closed' AND strategy_name IS DISTINCT FROM %s "
+                    "ORDER BY closed_at", (pair, TEST_STRATEGY))
         closed = pd.DataFrame(cur.fetchall())
     if not candles.empty:
         candles["timestamp"] = pd.to_datetime(candles["timestamp"], utc=True)

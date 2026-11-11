@@ -7,6 +7,10 @@ from enum import Enum
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
+# Estrategia de las operaciones de prueba (scripts/operacion_prueba.py): recorren todo el
+# sistema y mandan sus correos, pero no cuentan en el balance simulado ni en las estadísticas.
+TEST_STRATEGY = "prueba"
+
 
 class SignalDirection(str, Enum):
     BUY = "buy"
