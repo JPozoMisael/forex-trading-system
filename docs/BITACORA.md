@@ -5,6 +5,13 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-11-11 (operación de prueba a mano) · DESKTOP-RC7UDV1
+
+- En esta computadora el `.venv` apuntaba a un Python 3.13 que ya no existe (probablemente desinstalado): se rehízo con Python 3.11. Se añadió `six` a los requirements (oandapyV20 lo usa sin declararlo) y `pyrefly.toml` para el revisor de VS Code.
+- **`scripts/operacion_prueba.py`**: manda una señal de estrategia `prueba` (stop 0.5 ATR, objetivo 1.5x, GBP_USD por defecto) que pasa por el risk-manager y el execution-engine y manda todos los correos. No cuenta en el balance simulado ni en las estadísticas (`TEST_STRATEGY` en `shared/models.py`). Se niega sin `DRY_RUN=true`.
+- Uso en el servidor, tras el redeploy: terminal del contenedor en Dokploy → `python scripts/operacion_prueba.py` (`--par EUR_USD --venta` para otra).
+- 209 tests pasan.
+
 ## 2026-11-09 (plan hasta febrero) · DESKTOP-QQ3KOCN
 
 - Reportes de 1:30 y 8:00 sin señal (máximo 46 %). La tabla de calibración en vivo va al revés: EUR_USD compra 40–50 % tocó objetivo el 21 % frente al 40 % con < 40 %; oro compra < 40 %: 69 %. Coincide con P16.
