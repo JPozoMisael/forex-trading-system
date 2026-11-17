@@ -5,6 +5,13 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-11-17 (historial, desafío de cuenta pequeña y tiempo de respuesta) · DESKTOP-RC7UDV1
+
+- Primera práctica cerrada: VENTA EUR_USD al 39 %, +29.6 pips, +$145.04 (+1.49 R). Las diferencias de precio entre el correo de señal y el de cierre son el medio spread del simulador (SL/TP se mueven igual; distancias idénticas).
+- **Tiempo de respuesta medido**: Dukascopy publica la vela H1 ~12 s después del cierre; el collector consulta cada 15 s, así que la señal sale ~1 min después del cierre de la vela.
+- Reporte: **historial de operaciones cerradas** (modelo y práctica, con confianza, lote, resultado y R) y **desafío de cuenta pequeña** (`services/monitoring/src/challenge.py`): cómo iría una cuenta de `CHALLENGE_START_BALANCE` ($20) que copiara esas operaciones arriesgando `CHALLENGE_RISK_PCT` (5 %) con interés compuesto, hitos hasta `CHALLENGE_TARGET` ($300) y el lote necesario (marca "Micro" si es < 0.01). Solo cálculo: no abre órdenes.
+- 216 tests pasan.
+
 ## 2026-11-11 (operación de prueba a mano) · DESKTOP-RC7UDV1
 
 - En esta computadora el `.venv` apuntaba a un Python 3.13 que ya no existe (probablemente desinstalado): se rehízo con Python 3.11. Se añadió `six` a los requirements (oandapyV20 lo usa sin declararlo) y `pyrefly.toml` para el revisor de VS Code.

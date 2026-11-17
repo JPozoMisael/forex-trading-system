@@ -86,15 +86,21 @@ def test_report_shows_practice_and_counts_it_apart():
 def test_report_lists_closed_trades_of_model_and_practice():
     d = _data("EUR_USD", 0.41, 0.33)
     d.closed_orders = pd.DataFrame([{"pair": "EUR_USD", "direction": "sell", "pnl": -99.45, "r_multiple": -1.0,
-                                     "opened_at": d.candles.index[-40], "closed_at": d.candles.index[-30],
-                                     "metadata": {"signal": {"confidence": 0.52}}}])
+                                     "risk_amount": 99.45, "volume_lots": 0.5, "opened_at": d.candles.index[-40],
+                                     "closed_at": d.candles.index[-30], "metadata": {"signal": {"confidence": 0.52}}}])
     d.practice_closed = pd.DataFrame([{"pair": "EUR_USD", "direction": "sell", "pnl": 145.04, "r_multiple": 1.49,
-                                       "opened_at": d.candles.index[-10], "closed_at": d.candles.index[-4],
+                                       "risk_amount": 97.34, "volume_lots": 0.49, "opened_at": d.candles.index[-10],
+                                       "closed_at": d.candles.index[-4],
                                        "metadata": '{"signal": {"confidence": 0.39}}'}])
     _, html, text = build_report([d])
     assert "Historial de operaciones cerradas" in html
-    i_prac, i_model = text.index("Práctica · VENTA · 39 % · ✓ +$145.04 · +1.49 R"), text.index("Modelo · VENTA · 52 %")
+    i_prac = text.index("Práctica · VENTA · 39 % · 0.49 · ✓ +$145.04 · +1.49 R")
+    i_model = text.index("Modelo · VENTA · 52 % · 0.50")
     assert i_prac < i_model  # la más reciente primero
+    # Desafío de $20 al 5 %: pierde 1 R ($1.00 -> $19.00) y gana 1.49 R ($0.95 * 1.49 -> ~$20.42)
+    assert "🏁 Desafío $20 → $300" in html
+    assert "2 operación(es): va en $20.42" in text and "próximo hito $40" in text
+    assert "(Micro)" in text  # lotes de ~0.005: no caben en una cuenta estándar
 
 
 def test_closed_practice_email_says_it_was_practice():
@@ -105,3 +111,18 @@ def test_closed_practice_email_says_it_was_practice():
     subject, _, text = build_trade_email(t, has_chart=False)
     assert subject.startswith("[Práctica · Operación cerrada con pérdida]")
     assert "Como práctica del reporte, el sistema abrió una COMPRA" in text
+
+
+def test_challenge_compounds_and_detects_burned_account():
+    from challenge import challenge_progress, milestones
+
+    assert milestones(20, 300) == [40, 80, 160, 300]
+    wins = pd.DataFrame([{"pnl": 150.0, "risk_amount": 100.0, "volume_lots": 0.5,
+                          "closed_at": pd.Timestamp("2026-11-1%d" % i, tz="UTC")} for i in range(1, 4)])
+    res = challenge_progress(wins, 20, 300, 10)
+    assert res["saldo"] == pytest.approx(20 * 1.15 ** 3)
+    # el lote se escala al riesgo del desafío: $2 de $100 -> 0.5 * 0.02 = 0.01
+    assert res["filas"][0]["lote"] == pytest.approx(0.01)
+    losses = wins.assign(pnl=-100.0)
+    assert not challenge_progress(losses, 20, 300, 10)["quemada"]
+    assert challenge_progress(losses, 20, 300, 100)["quemada"]  # todo o nada: se quema en la primera

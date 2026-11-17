@@ -139,6 +139,14 @@ class Settings:
     # Operación de práctica en cada reporte: la de mayor probabilidad del modelo aunque no llegue
     # al umbral. Solo con DRY_RUN; se mide aparte y no mueve el balance simulado.
     enable_practice_trades: bool = _get_bool("ENABLE_PRACTICE_TRADES", "true")
+    # Desafío de cuenta pequeña en el reporte: cómo iría una cuenta de CHALLENGE_START_BALANCE que
+    # copiara las operaciones cerradas (modelo y práctica) arriesgando CHALLENGE_RISK_PCT % de su saldo.
+    # Solo informativo: no abre órdenes. CHALLENGE_START (AAAA-MM-DD) = desde cuándo contar; vacío = todas.
+    enable_challenge: bool = _get_bool("ENABLE_CHALLENGE", "true")
+    challenge_start_balance: float = float(os.getenv("CHALLENGE_START_BALANCE", "20"))
+    challenge_target: float = float(os.getenv("CHALLENGE_TARGET", "300"))
+    challenge_risk_pct: float = float(os.getenv("CHALLENGE_RISK_PCT", "5"))
+    challenge_start: str = os.getenv("CHALLENGE_START", "")
 
     # Streams de Redis (persistentes: un servicio caído no pierde mensajes)
     channel_market_candle: str = "market:candle"          # Nueva vela cerrada (sufijo :PAR)

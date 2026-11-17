@@ -609,11 +609,45 @@ def trade_history_rows(datas: List[ReportData], limit: int = 20) -> List[List[st
                     fmt_local(o["opened_at"]), display_name(str(o.get("pair") or d.pair)), kind,
                     _SIDE.get(str(o.get("direction", "")).lower(), str(o.get("direction", "")).upper()),
                     f"{conf * 100:.0f} %" if conf is not None else "-",
+                    f"{float(o['volume_lots']):.2f}" if pd.notna(o.get("volume_lots")) else "-",
                     ("✓ " if (pnl or 0) > 0 else "✗ ") + (_fmt_money(pnl) if pnl is not None else "-"),
                     f"{float(r):+.2f} R" if r is not None and pd.notna(r) else "-",
                 ]))
     rows.sort(key=lambda x: x[0], reverse=True)
     return [r for _, r in rows[:limit]]
+
+
+def _challenge_section(datas: List[ReportData]) -> Tuple[List[str], List[List[str]]]:
+    """(líneas de resumen, filas por operación) del desafío de cuenta pequeña."""
+    from challenge import MIN_STANDARD_LOT, challenge_progress, challenge_trades
+
+    start, target, risk = (settings.challenge_start_balance, settings.challenge_target, settings.challenge_risk_pct)
+    res = challenge_progress(challenge_trades(datas), start, target, risk)
+    head = (f"Si una cuenta de ${start:,.0f} hubiera copiado las operaciones cerradas del sistema (modelo y práctica) "
+            f"arriesgando el {risk:g} % de su saldo en cada una:")
+    if not res["filas"]:
+        return [head, "todavía no hay operaciones cerradas que copiar."], []
+    nxt = next((h for h in res["hitos"] if h > res["saldo"]), None)
+    if res["quemada"]:
+        status = "la cuenta se quemó: hay que volver a empezar y revisar qué falló."
+    elif res["saldo"] >= target:
+        status = f"¡llegó a la meta de ${target:,.0f}!"
+    else:
+        status = (f"va en ${res['saldo']:,.2f} ({res['progreso_pct']:+.0f} % del camino a ${target:,.0f}); "
+                  f"próximo hito ${nxt:,.0f}.")
+    lines = [head, f"{len(res['filas'])} operación(es): {status}",
+             f"Hitos: {' → '.join(f'${h:,.0f}' for h in [start] + res['hitos'])}. Un lote por debajo de "
+             f"{MIN_STANDARD_LOT} no existe en una cuenta estándar: hace falta una cuenta Micro (lotes 100 veces más "
+             f"pequeños)."]
+    rows = []
+    for f in reversed(res["filas"]):
+        t = f["trade"]
+        lote = f["lote"]
+        lote_txt = "-" if lote is None else (f"{lote:.4f} (Micro)" if lote < MIN_STANDARD_LOT else f"{lote:.2f}")
+        rows.append([fmt_local(t["opened_at"]) if pd.notna(t.get("opened_at")) else "-",
+                     display_name(str(t.get("pair"))), str(t.get("kind", "")), f"{f['r']:+.2f} R",
+                     f"${f['riesgo']:,.2f}", lote_txt, f"${f['saldo']:,.2f}"])
+    return lines, rows
 
 
 def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=None,
@@ -713,6 +747,10 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=No
     if history:
         lines += ["", "HISTORIAL DE OPERACIONES CERRADAS (modelo y práctica, la más reciente primero):"]
         lines += [f"  {' · '.join(r)}" for r in history]
+    challenge_lines, challenge_rows = _challenge_section(datas) if settings.enable_challenge else ([], [])
+    if challenge_lines:
+        lines += ["", f"🏁 DESAFÍO ${settings.challenge_start_balance:,.0f} → ${settings.challenge_target:,.0f}:"]
+        lines += [f"  {t}" for t in challenge_lines] + [f"  {' · '.join(r)}" for r in challenge_rows]
     lines += ["", "Modo simulación (DRY_RUN): no se envían órdenes a ningún broker."]
     text = "\n".join(lines)
 
@@ -784,10 +822,22 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=No
     history_html = ""
     if history:
         history_html = (f"<h2 {h2}>Historial de operaciones cerradas</h2>"
-                        + table(["Abierta", "Instrumento", "Tipo", "Operación", "Confianza", "Resultado", "R"], history)
+                        + table(["Abierta", "Instrumento", "Tipo", "Operación", "Confianza", "Lote", "Resultado", "R"], history)
                         + f"<p style='font-size:12px;color:{TEXT_SECONDARY}'>Modelo = señal del 50 % o más (mueve el "
                           f"balance). Práctica = la mejor del reporte aunque no llegue (se cuenta aparte). Confianza = "
-                          f"probabilidad que dio el modelo al abrir.</p>")
+                          f"probabilidad que dio el modelo al abrir. Lote = el de la cuenta simulada de "
+                          f"${datas[0].initial_balance:,.0f} arriesgando {settings.risk_per_trade_pct:g} %.</p>")
+
+    challenge_html = ""
+    if challenge_lines:
+        challenge_html = (f"<h2 {h2}>🏁 Desafío ${settings.challenge_start_balance:,.0f} → "
+                          f"${settings.challenge_target:,.0f}</h2>"
+                          + "".join(f"<p {p}>{t}</p>" for t in challenge_lines)
+                          + (table(["Abierta", "Instrumento", "Tipo", "Resultado", "Arriesgó", "Lote", "Saldo"],
+                                   challenge_rows) if challenge_rows else "")
+                          + f"<p style='font-size:12px;color:{TEXT_SECONDARY}'>Es un cálculo: no se abre ninguna "
+                            f"orden. Se ajusta en Dokploy con CHALLENGE_START_BALANCE, CHALLENGE_TARGET, "
+                            f"CHALLENGE_RISK_PCT y CHALLENGE_START.</p>")
 
     html = f"""<html><body style="font-family:Arial,Helvetica,sans-serif;color:{TEXT_PRIMARY};background:{SURFACE};max-width:900px">
 <h1 style="font-size:19px;margin:0 0 4px">{title} · {', '.join(display_name(d.pair) for d in datas)} · velas de {first.granularity}</h1>
@@ -810,6 +860,7 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=No
 {table(["", ""], stats_rows)}
 <p style="font-size:12px;color:{TEXT_SECONDARY}">{ref} El modelo no tiene ventaja probada: este periodo sirve para comprobarlo.</p>
 {history_html}
+{challenge_html}
 </body></html>"""
     return subject, html, text
 
