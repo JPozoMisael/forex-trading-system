@@ -83,6 +83,20 @@ def test_report_shows_practice_and_counts_it_apart():
     assert "Operación de práctica" not in html_off
 
 
+def test_report_lists_closed_trades_of_model_and_practice():
+    d = _data("EUR_USD", 0.41, 0.33)
+    d.closed_orders = pd.DataFrame([{"pair": "EUR_USD", "direction": "sell", "pnl": -99.45, "r_multiple": -1.0,
+                                     "opened_at": d.candles.index[-40], "closed_at": d.candles.index[-30],
+                                     "metadata": {"signal": {"confidence": 0.52}}}])
+    d.practice_closed = pd.DataFrame([{"pair": "EUR_USD", "direction": "sell", "pnl": 145.04, "r_multiple": 1.49,
+                                       "opened_at": d.candles.index[-10], "closed_at": d.candles.index[-4],
+                                       "metadata": '{"signal": {"confidence": 0.39}}'}])
+    _, html, text = build_report([d])
+    assert "Historial de operaciones cerradas" in html
+    i_prac, i_model = text.index("Práctica · VENTA · 39 % · ✓ +$145.04 · +1.49 R"), text.index("Modelo · VENTA · 52 %")
+    assert i_prac < i_model  # la más reciente primero
+
+
 def test_closed_practice_email_says_it_was_practice():
     t = {"pair": "EUR_USD", "direction": "buy", "entry_price": 1.1, "exit_price": 1.098, "stop_loss": 1.098,
          "take_profit": 1.103, "opened_at": pd.Timestamp("2026-11-11 13:00", tz="UTC"),

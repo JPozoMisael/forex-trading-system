@@ -14,6 +14,7 @@ modelo NO los usa para decidir.
     python services/monitoring/src/daily_report.py --enviar                   # envía ahora por email
 """
 import argparse
+import json
 import io
 import math
 import os
@@ -580,6 +581,41 @@ def _practice_section(practice, datas: List[ReportData]) -> Tuple[str, List[str]
                   f"(el objetivo es 1.5 veces el stop)."]
 
 
+def _confidence(meta: Any) -> Optional[float]:
+    """Probabilidad con la que se abrió la orden (metadata.signal.confidence), o None."""
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except ValueError:
+            return None
+    try:
+        return float(meta["signal"]["confidence"])
+    except (TypeError, KeyError, ValueError):
+        return None
+
+
+def trade_history_rows(datas: List[ReportData], limit: int = 20) -> List[List[str]]:
+    """Operaciones cerradas del modelo y de la práctica, la más reciente primero."""
+    rows = []
+    for d in datas:
+        for kind, df in (("Modelo", d.closed_orders), ("Práctica", d.practice_closed)):
+            for _, o in df.iterrows():
+                if pd.isna(o.get("closed_at")):
+                    continue
+                conf = _confidence(o.get("metadata"))
+                pnl = float(o["pnl"]) if pd.notna(o.get("pnl")) else None
+                r = o.get("r_multiple")
+                rows.append((pd.Timestamp(o["closed_at"]), [
+                    fmt_local(o["opened_at"]), display_name(str(o.get("pair") or d.pair)), kind,
+                    _SIDE.get(str(o.get("direction", "")).lower(), str(o.get("direction", "")).upper()),
+                    f"{conf * 100:.0f} %" if conf is not None else "-",
+                    ("✓ " if (pnl or 0) > 0 else "✗ ") + (_fmt_money(pnl) if pnl is not None else "-"),
+                    f"{float(r):+.2f} R" if r is not None and pd.notna(r) else "-",
+                ]))
+    rows.sort(key=lambda x: x[0], reverse=True)
+    return [r for _, r in rows[:limit]]
+
+
 def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=None,
                  practice_on: bool = False) -> Tuple[str, str, str]:
     """
@@ -673,6 +709,10 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=No
             lines += [f"  REPASO 24 h: {s['review']['summary']} (detalle hora por hora en el correo)"]
     lines += ["", f"CUENTA SIMULADA: {account_line}", "", "ACUMULADO (todos los instrumentos):"]
     lines += [f"  {k}: {v}" for k, v in stats_rows] + [f"  {ref}"]
+    history = trade_history_rows(datas)
+    if history:
+        lines += ["", "HISTORIAL DE OPERACIONES CERRADAS (modelo y práctica, la más reciente primero):"]
+        lines += [f"  {' · '.join(r)}" for r in history]
     lines += ["", "Modo simulación (DRY_RUN): no se envían órdenes a ningún broker."]
     text = "\n".join(lines)
 
@@ -741,6 +781,14 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=No
              for r in live_rows] or ["  todavía sin horas con resultado"])
         text = "\n".join(lines)
 
+    history_html = ""
+    if history:
+        history_html = (f"<h2 {h2}>Historial de operaciones cerradas</h2>"
+                        + table(["Abierta", "Instrumento", "Tipo", "Operación", "Confianza", "Resultado", "R"], history)
+                        + f"<p style='font-size:12px;color:{TEXT_SECONDARY}'>Modelo = señal del 50 % o más (mueve el "
+                          f"balance). Práctica = la mejor del reporte aunque no llegue (se cuenta aparte). Confianza = "
+                          f"probabilidad que dio el modelo al abrir.</p>")
+
     html = f"""<html><body style="font-family:Arial,Helvetica,sans-serif;color:{TEXT_PRIMARY};background:{SURFACE};max-width:900px">
 <h1 style="font-size:19px;margin:0 0 4px">{title} · {', '.join(display_name(d.pair) for d in datas)} · velas de {first.granularity}</h1>
 <div style="color:{TEXT_SECONDARY};font-size:13px">{when} Modo simulación (DRY_RUN): no se arriesga dinero real.<br>{sessions_now}</div>
@@ -761,6 +809,7 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=No
 <h2 {h2}>Acumulado desde el inicio (todos los instrumentos)</h2>
 {table(["", ""], stats_rows)}
 <p style="font-size:12px;color:{TEXT_SECONDARY}">{ref} El modelo no tiene ventaja probada: este periodo sirve para comprobarlo.</p>
+{history_html}
 </body></html>"""
     return subject, html, text
 
