@@ -136,33 +136,7 @@ class EmailNotifier:
         if not settings.enable_email_orders:
             return
 
-        pair = order.get("pair", "UNKNOWN")
-        direction = str(order.get("direction", "")).upper()
-        units = order.get("units") or 0
-        lots = order.get("volume_lots")
-        status = str(order.get("status", "filled")).upper()
-        error = order.get("error")
-        entry = order.get("entry_price", 0.0)
-        ticket = order.get("broker_ticket") or "N/A"
-        sl = order.get("stop_loss", "N/A")
-        tp = order.get("take_profit", "N/A")
-        mode = "SIMULACION" if settings.dry_run else f"MT5 {settings.mt5_server}"
-
-        subject = f"[Orden {status}] {pair} {direction} - {mode}"
-        body = (
-            f"ORDEN {status}\n"
-            f"----------------------------------------\n"
-            f"Ambiente: {mode}\n"
-            f"Par: {pair} | {direction}\n"
-            f"Volumen: {lots} lotes ({units:,} unidades)\n"
-            f"Precio Entrada: {entry}\n"
-            f"Stop Loss: {sl}\n"
-            f"Take Profit: {tp}\n"
-            f"Ticket ID: {ticket}\n"
-            + (f"Motivo: {error}\n" if error else "")
-            + f"----------------------------------------\n"
-            + ("Operación asegurada con SL y TP activos." if status == "FILLED" else "La orden NO se abrió.")
-        )
+        subject, body = order_executed_message(order)
         self.send_message(subject, body)
 
     def send_trade_closed_alert(self, trade: Dict[str, Any]):
@@ -219,3 +193,52 @@ class EmailNotifier:
             f"El capital se mantiene protegido."
         )
         self.send_message(subject, body)
+
+
+_ORDER_STATUS_ES = {"FILLED": "ABIERTA", "REJECTED": "RECHAZADA", "CANCELLED": "CANCELADA"}
+_SIDE_ES = {"BUY": "COMPRA", "SELL": "VENTA"}
+
+
+def order_executed_message(order: Dict[str, Any]):
+    """(asunto, cuerpo) del aviso de orden ejecutada, en palabras y con los precios redondeados."""
+    from charts import digits, move_text
+
+    pair = order.get("pair", "UNKNOWN")
+    side = _SIDE_ES.get(str(order.get("direction", "")).upper(), str(order.get("direction", "")).upper())
+    raw_status = str(order.get("status", "filled")).upper()
+    status = _ORDER_STATUS_ES.get(raw_status, raw_status)
+    strategy = order.get("strategy_name") or ""
+    kind = " · práctica" if strategy == "practica" else (" · prueba" if strategy == "prueba" else "")
+    mode = "simulación" if settings.dry_run else f"MT5 {settings.mt5_server}"
+    d = digits(pair)
+    units = order.get("units") or 0
+    lots = order.get("volume_lots")
+    size = f"{units:,} onzas" if pair.upper().startswith("XAU") else f"{units:,} unidades"
+
+    def px(key):
+        v = order.get(key)
+        return f"{float(v):.{d}f}" if isinstance(v, (int, float)) else "-"
+
+    def dist(key):
+        v, e = order.get(key), order.get("entry_price")
+        return f" ({move_text(pair, float(v) - float(e))} de la entrada)" if isinstance(v, (int, float)) and e else ""
+
+    subject = f"[Orden {status}] {pair} {side}{kind} · {mode}"
+    opened = raw_status == "FILLED"
+    head = (f"ORDEN {status}: la operación ya está en curso. Te llega otro correo cuando se cierre "
+            f"(en el stop o en el objetivo)." if opened else f"ORDEN {status}: la operación NO se abrió.")
+    body = (
+        f"{head}\n"
+        f"----------------------------------------\n"
+        f"Ambiente: {mode}\n"
+        f"Instrumento: {pair} | {side}{kind}\n"
+        f"Tamaño: {lots} lotes ({size})\n"
+        f"Entrada: {px('entry_price')}\n"
+        f"Stop Loss: {px('stop_loss')}{dist('stop_loss')}\n"
+        f"Take Profit: {px('take_profit')}{dist('take_profit')}\n"
+        f"Ticket: {order.get('broker_ticket') or '-'}\n"
+        + (f"Motivo: {order['error']}\n" if order.get("error") else "")
+        + "----------------------------------------\n"
+        + ("Protegida con Stop Loss y Take Profit desde que se abrió." if opened else "")
+    )
+    return subject, body

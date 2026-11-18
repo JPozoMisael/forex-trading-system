@@ -126,3 +126,18 @@ def test_challenge_compounds_and_detects_burned_account():
     losses = wins.assign(pnl=-100.0)
     assert not challenge_progress(losses, 20, 300, 10)["quemada"]
     assert challenge_progress(losses, 20, 300, 100)["quemada"]  # todo o nada: se quema en la primera
+
+
+def test_order_email_is_in_plain_spanish():
+    from email_alerts import order_executed_message
+
+    subject, body = order_executed_message({
+        "pair": "XAU_USD", "direction": "sell", "status": "filled", "units": 2, "volume_lots": 0.02,
+        "entry_price": 3788.89, "stop_loss": 3822.843, "take_profit": 3737.96, "broker_ticket": "SIM_X",
+        "strategy_name": "practica"})
+    assert subject.startswith("[Orden ABIERTA] XAU_USD VENTA · práctica")
+    assert "ya está en curso" in body and "0.02 lotes (2 onzas)" in body
+    assert "Stop Loss: 3822.84 (33.95 USD/oz de la entrada)" in body
+    _, rejected = order_executed_message({"pair": "EUR_USD", "direction": "buy", "status": "rejected",
+                                          "error": "sin margen"})
+    assert "NO se abrió" in rejected and "Motivo: sin margen" in rejected
