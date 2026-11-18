@@ -9,3 +9,5 @@ pandas==2.2.3
 matplotlib==3.10.0
 # Velas de otras temporalidades y de cada operación para los gráficos
 dukascopy-python==4.0.1
+# Resumen de noticias del reporte (Claude)
+anthropic==2.10.0

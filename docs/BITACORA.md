@@ -12,6 +12,16 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 - Reporte: **historial de operaciones cerradas** (modelo y práctica, con confianza, lote, resultado y R) y **desafío de cuenta pequeña** (`services/monitoring/src/challenge.py`): cómo iría una cuenta de `CHALLENGE_START_BALANCE` ($20) que copiara esas operaciones arriesgando `CHALLENGE_RISK_PCT` (5 %) con interés compuesto, hitos hasta `CHALLENGE_TARGET` ($300) y el lote necesario (marca "Micro" si es < 0.01). Solo cálculo: no abre órdenes.
 - 216 tests pasan.
 
+## 2026-11-18 (noticias del mundo con Claude) · DESKTOP-RC7UDV1
+
+- **"🌍 Lo que está moviendo el mundo"** en el reporte (`services/monitoring/src/news_digest.py`): titulares de las últimas 24 h de RSS públicos (FXStreet, Investing forex y economía, CNBC; `NEWS_FEEDS`), sin repetir. Claude (`NEWS_MODEL`, por defecto `claude-opus-5-5`, effort medium, salida JSON con esquema, fallback del servidor ante rechazos) elige hasta 6 noticias que puedan mover los instrumentos y dice en español por qué importan y si cada instrumento suele subir, bajar o es incierto.
+  - Los titulares van como datos (el prompt ordena ignorar instrucciones dentro de ellos) y el texto de Claude se escapa antes de ir al HTML.
+  - Solo contexto: el modelo no usa noticias y no abre operaciones por ellas.
+  - Necesita `ANTHROPIC_API_KEY` (API de Anthropic, por uso, ~2 USD/mes con 2 reportes al día; es aparte de la suscripción de claude.ai). Sin clave la sección no sale; si la API o las fuentes fallan, el reporte sale con un aviso.
+  - Dependencia nueva: `anthropic==2.10.0` (monitoring y requirements-local).
+  - El comando `python` de esta computadora apunta al Python 3.13 desinstalado (`py` launcher): usar siempre `.venv\Scripts\python`.
+- 222 tests pasan.
+
 ## 2026-11-11 (operación de prueba a mano) · DESKTOP-RC7UDV1
 
 - En esta computadora el `.venv` apuntaba a un Python 3.13 que ya no existe (probablemente desinstalado): se rehízo con Python 3.11. Se añadió `six` a los requirements (oandapyV20 lo usa sin declararlo) y `pyrefly.toml` para el revisor de VS Code.

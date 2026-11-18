@@ -22,3 +22,5 @@ scikit-learn==1.9.1
 joblib==1.6.0
 pytest>=8.3
 fakeredis>=2.26
+# Resumen de noticias del reporte (Claude)
+anthropic==2.10.0

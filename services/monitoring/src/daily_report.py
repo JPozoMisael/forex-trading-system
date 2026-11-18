@@ -650,8 +650,36 @@ def _challenge_section(datas: List[ReportData]) -> Tuple[List[str], List[List[st
     return lines, rows
 
 
+def _news_section(news: Optional[Dict[str, Any]]) -> Tuple[List[str], str]:
+    """(líneas de texto, html) de "Lo que está moviendo el mundo". El texto viene de Claude: se escapa."""
+    from html import escape
+
+    arrows = {"sube": "↑", "baja": "↓", "incierto": "↕"}
+    note = ("Resumen de titulares de las últimas 24 h hecho por IA (Claude): es contexto para entender el mercado, "
+            "no una señal. El modelo no usa noticias.")
+    if not news:
+        msg = "No se pudo preparar el resumen de noticias esta vez."
+        return [msg], f"<p style='font-size:13px;margin:0 0 8px'>{msg}</p>"
+    lines, rows = [], []
+    for n in news.get("noticias", []):
+        effects = ", ".join(f"{display_name(e['instrumento'])} {arrows.get(e['direccion'], '?')}"
+                            for e in n.get("efectos", []))
+        lines.append(f"{n['titulo']} — {n['explicacion']}" + (f" [{effects}]" if effects else ""))
+        rows.append(f"<li style='margin-bottom:6px'><b>{escape(n['titulo'])}</b>"
+                    + (f" <span style='color:{TEXT_SECONDARY}'>· {escape(effects)}</span>" if effects else "")
+                    + f"<br>{escape(n['explicacion'])}</li>")
+    summary = news.get("resumen", "")
+    lines += [f"En resumen: {summary}", note]
+    html = (f"<p style='font-size:13px;margin:0 0 8px'><b>En resumen:</b> {escape(summary)}</p>"
+            f"<ul style='font-size:13px;margin:0 0 8px;padding-left:18px'>{''.join(rows)}</ul>"
+            f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:0'>{note} ↑ suele subir · ↓ suele bajar · "
+            f"↕ incierto. Se leyeron {news.get('titulares', 0)} titulares.</p>")
+    return lines, html
+
+
 def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=None,
-                 practice_on: bool = False) -> Tuple[str, str, str]:
+                 practice_on: bool = False, news: Optional[Dict[str, Any]] = None,
+                 news_on: bool = False) -> Tuple[str, str, str]:
     """
     (asunto, html, texto plano) para uno o varios instrumentos. El HTML
     referencia cada gráfico como cid:grafico_<PAR>. Estado del sistema, cuenta
@@ -659,7 +687,9 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=No
     `events`: noticias de econ_calendar.upcoming (None = no se pudo leer el calendario).
     `practice`: la operación de práctica de este turno (practice.Practice) o None; la sección
     solo sale con `practice_on`.
+    `news`: resumen de news_digest (None = falló); la sección solo sale con `news_on`.
     """
+    world_news = news  # `news` se usa más abajo para la noticia del asunto
     datas = [datas] if isinstance(datas, ReportData) else list(datas)
     first = datas[0]
     ok = first.health.get("overall_status", "UP") == "UP"
@@ -723,6 +753,12 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=No
     lines += ["", "NOTICIAS DE IMPACTO ALTO (próximas 24 h):"]
     lines += [f"  {r[0]} · {r[1]} · {r[2]} (previsión {r[3]}, anterior {r[4]}) → {r[5]}" for r in news_rows]
     lines += [f"  {news_note}"]
+    world_html = ""
+    if news_on:
+        world_lines, world_body = _news_section(world_news)
+        lines += ["", "🌍 LO QUE ESTÁ MOVIENDO EL MUNDO:"] + [f"  {t}" for t in world_lines]
+        world_html = (f"<h2 style='font-size:15px;margin:22px 0 8px;color:{TEXT_PRIMARY}'>🌍 Lo que está moviendo el "
+                      f"mundo</h2>{world_body}")
     practice_html = ""
     if practice_on:
         practice_text, practice_stats = _practice_section(practice, datas)
@@ -849,6 +885,7 @@ def build_report(datas, events: Optional[List[Dict[str, Any]]] = (), practice=No
 <h2 {h2}>📰 Noticias de impacto alto (próximas 24 h)</h2>
 {table(["Hora", "Moneda", "Noticia", "Previsión", "Anterior", "Afecta a"], news_rows) if news_rows else ""}
 <p style="font-size:12px;color:{TEXT_SECONDARY};margin:6px 0 0">{news_note}</p>
+{world_html}
 {practice_html}
 {''.join(parts)}
 {live_html}
@@ -981,6 +1018,7 @@ def send_daily_report(email, telegram, bus, checker, now: Optional[datetime] = N
     `practice`: abrir la operación de práctica del turno (si ENABLE_PRACTICE_TRADES y DRY_RUN).
     """
     from econ_calendar import calendar_for_report
+    from news_digest import digest_enabled, news_for_report
     from practice import pick_practice, practice_enabled, publish_practice
 
     review = review_due(now or datetime.now(timezone.utc)) if review is None else review
@@ -989,7 +1027,10 @@ def send_daily_report(email, telegram, bus, checker, now: Optional[datetime] = N
     practice_on = practice and practice_enabled()
     chosen = pick_practice(datas, datas[0].now) if practice_on else None
     images = report_images(datas)  # antes del texto: si un gráfico falla, el HTML no lo referencia
-    subject, html, text = build_report(datas, events, practice=chosen, practice_on=practice_on)
+    news_on = digest_enabled()
+    news = news_for_report([d.pair for d in datas], datas[0].now) if news_on else None
+    subject, html, text = build_report(datas, events, practice=chosen, practice_on=practice_on, news=news,
+                                       news_on=news_on)
     sent = email.send_html(subject, html, text, images=images)
     telegram.send_message(text.replace("_", "/"))  # "_" rompe el Markdown de Telegram
     if chosen is not None:

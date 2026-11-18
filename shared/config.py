@@ -147,6 +147,18 @@ class Settings:
     challenge_target: float = float(os.getenv("CHALLENGE_TARGET", "300"))
     challenge_risk_pct: float = float(os.getenv("CHALLENGE_RISK_PCT", "5"))
     challenge_start: str = os.getenv("CHALLENGE_START", "")
+    # Resumen de noticias del mundo en el reporte, escrito por Claude (API de Anthropic, se paga por uso:
+    # es aparte de la suscripción de claude.ai). Sin ANTHROPIC_API_KEY la sección no sale.
+    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    enable_news_digest: bool = _get_bool("ENABLE_NEWS_DIGEST", "true")
+    news_model: str = os.getenv("NEWS_MODEL", "claude-opus-5-5")
+    # URLs RSS separadas por coma (sin pasar a mayúsculas como _get_list)
+    news_feeds: List[str] = field(default_factory=lambda: [u.strip() for u in os.getenv("NEWS_FEEDS", ",".join([
+        "https://www.fxstreet.com/rss/news",
+        "https://www.investing.com/rss/news_1.rss",
+        "https://www.investing.com/rss/news_14.rss",
+        "https://www.cnbc.com/id/100727362/device/rss/rss.html",
+    ])).split(",") if u.strip()])
 
     # Streams de Redis (persistentes: un servicio caído no pierde mensajes)
     channel_market_candle: str = "market:candle"          # Nueva vela cerrada (sufijo :PAR)
