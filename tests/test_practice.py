@@ -141,3 +141,19 @@ def test_order_email_is_in_plain_spanish():
     _, rejected = order_executed_message({"pair": "EUR_USD", "direction": "buy", "status": "rejected",
                                           "error": "sin margen"})
     assert "NO se abrió" in rejected and "Motivo: sin margen" in rejected
+
+
+def test_operaciones_script_formats_rows():
+    import importlib.util
+    from decimal import Decimal
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("operaciones", Path(__file__).parent.parent / "scripts" / "operaciones.py")
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    line = mod.fmt_row((12, "18/11 01:31", "XAU_USD", "practica", "sell", Decimal("41"), 0.02, 3788.89, 3737.96, "tp",
+                        Decimal("101.86"), Decimal("1.50"), "closed"))
+    assert "práctica" in line and "VENTA" in line and "conf 41 %" in line and "+101.86 USD (+1.50 R, tp)" in line
+    assert "abierta" in mod.fmt_row((13, None, "EUR_USD", "ML_LightGBM", "buy", None, 0.5, 1.1, None, None, None,
+                                     None, "filled"))
