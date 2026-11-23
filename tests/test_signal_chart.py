@@ -55,7 +55,8 @@ def test_signal_email_has_chart_and_guide():
     df = _candles()
     subject, html, text, images = build_signal_email(_sig(df), df, "H1")
     assert subject.startswith("[Señal] EUR_USD COMPRA · práctica")
-    assert images["senal"][:4] == b"\x89PNG"
+    assert images["senal"][:4] == b"\x89PNG" and images["guia"][:4] == b"\x89PNG"
+    assert 'src="cid:guia"' in html
     assert 'src="cid:senal"' in html and "Cómo leer el gráfico" in html and "Mechas" in html
     assert "Techo de 24 h" in text and "Última vela" in text and "POR QUÉ" in text
 
@@ -68,4 +69,4 @@ def test_without_candles_sends_text_only():
 
     m = Mail()
     assert send_signal_report(m, _sig(_candles()), fetch=lambda *a: pd.DataFrame())
-    assert m.sent[1] == {} and "POR QUÉ" not in m.sent[0]
+    assert "senal" not in m.sent[1] and "POR QUÉ" not in m.sent[0]

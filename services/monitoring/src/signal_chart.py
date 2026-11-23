@@ -13,9 +13,11 @@ niveles se calculan con una regla simple y fija para que siempre se dibujen igua
   gente mira ese precio.
 """
 from datetime import datetime, timezone
+from functools import lru_cache
 from html import escape
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import matplotlib.pyplot as plt
 import pandas as pd
 
 from charts import (DOWN, GRID, REFERENCE, SURFACE, TEXT_PRIMARY, TEXT_SECONDARY, UP, digits, display_name,
@@ -199,6 +201,86 @@ GUIDE = [
 ]
 
 
+def _guide_candle(ax, x, o, h, l, c, width=0.5):
+    color = UP if c >= o else DOWN
+    ax.vlines(x, l, h, color=color, linewidth=2.2, zorder=2)
+    lo, hi = sorted((o, c))
+    ax.add_patch(plt.Rectangle((x - width / 2, lo), width, max(hi - lo, 0.04), facecolor=color, edgecolor=color,
+                               zorder=3))
+
+
+def _note(ax, text, xy, xytext, ha="left"):
+    ax.annotate(text, xy=xy, xytext=xytext, ha=ha, va="center", fontsize=8.5, color=TEXT_PRIMARY,
+                arrowprops=dict(arrowstyle="-|>", color=TEXT_SECONDARY, lw=0.8))
+
+
+def _clean(ax, title):
+    ax.set_title(title, loc="left", fontsize=11, color=TEXT_PRIMARY, pad=8)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for side in ax.spines.values():
+        side.set_visible(False)
+
+
+@lru_cache(maxsize=1)
+def plot_guide() -> bytes:
+    """Imagen fija de la guía: partes de una vela, velas de rechazo y soporte/resistencia."""
+    fig, axes = new_figure(1, 3, size=(12, 4.6))
+    # 1) Partes de una vela
+    ax = axes[0]
+    _guide_candle(ax, 1, o=2, h=5, l=0.6, c=4)
+    _guide_candle(ax, 3.6, o=4, h=4.7, l=1, c=2)
+    _note(ax, "máximo", (1, 5), (1.6, 5.3))
+    _note(ax, "cierre", (1.25, 4), (1.9, 4.2))
+    _note(ax, "cuerpo", (1.25, 3), (1.9, 3.1))
+    _note(ax, "apertura", (1.25, 2), (1.9, 2.0))
+    _note(ax, "mínimo", (1, 0.6), (1.6, 0.4))
+    _note(ax, "mecha\nsuperior", (3.6, 4.35), (4.2, 5.2))
+    _note(ax, "mecha\ninferior", (3.6, 1.5), (4.2, 0.8))
+    ax.text(1, -0.6, "Verde: subió\n(cierre arriba\nde la apertura)", ha="center", fontsize=8, color=UP)
+    ax.text(3.6, -0.6, "Naranja: bajó\n(cierre abajo\nde la apertura)", ha="center", fontsize=8, color=DOWN)
+    ax.set_xlim(0, 5.4)
+    ax.set_ylim(-1.5, 6)
+    _clean(ax, "1. Partes de una vela")
+    # 2) Velas que cuentan algo
+    ax = axes[1]
+    _guide_candle(ax, 0.9, o=3.6, h=4.0, l=0.6, c=3.9)
+    _guide_candle(ax, 2.7, o=1.7, h=4.9, l=1.4, c=1.5)
+    _guide_candle(ax, 4.5, o=2.75, h=4.2, l=1.3, c=2.8)
+    _guide_candle(ax, 6.3, o=0.8, h=4.8, l=0.7, c=4.7)
+    for x, title, body in ((0.9, "Rechazo\nabajo", "mecha inferior\nlarga: los\ncompradores\nempujaron\narriba"),
+                           (2.7, "Rechazo\narriba", "mecha superior\nlarga: los\nvendedores\nempujaron\nabajo"),
+                           (4.5, "Indecisión", "cuerpo\nmínimo:\nnadie ganó"),
+                           (6.3, "Dominio", "cuerpo\ngrande sin\nmechas: un\nlado mandó")):
+        ax.text(x, 5.2, title, ha="center", va="bottom", fontsize=8.5, fontweight="bold", color=TEXT_PRIMARY)
+        ax.text(x, -0.2, body, ha="center", va="top", fontsize=7.5, color=TEXT_SECONDARY)
+    ax.set_xlim(0, 7.2)
+    ax.set_ylim(-2.6, 6)
+    _clean(ax, "2. Velas que cuentan algo")
+    # 3) Soporte y resistencia
+    ax = axes[2]
+    xs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    ys = [1.5, 3.9, 2.2, 3.95, 1.6, 3.4, 1.55, 3.0, 4.8, 4.05, 5.3]
+    ax.plot(xs, ys, color=TEXT_PRIMARY, linewidth=1.6)
+    ax.axhline(4.0, color=ZONE_COLORS["resistencia"], linewidth=2)
+    ax.axhline(1.5, color=ZONE_COLORS["soporte"], linewidth=2)
+    for x in (1, 3):
+        ax.scatter([x], [ys[x]], s=40, color=ZONE_COLORS["resistencia"], zorder=4)
+    for x in (0, 4, 6):
+        ax.scatter([x], [ys[x]], s=40, color=ZONE_COLORS["soporte"], zorder=4)
+    ax.text(0.1, 4.15, "Resistencia (techo): aquí giró a la baja", fontsize=8, color=ZONE_COLORS["resistencia"],
+            fontweight="bold")
+    ax.text(0.1, 1.1, "Soporte (piso): aquí giró al alza", fontsize=8, color=ZONE_COLORS["soporte"],
+            fontweight="bold")
+    _note(ax, "rompe el techo", (7.6, 4.0), (5.2, 5.4), ha="right")
+    _note(ax, "el techo viejo\nahora es piso", (9, 4.05), (9.6, 2.6), ha="center")
+    ax.set_xlim(-0.3, 10.5)
+    ax.set_ylim(0.6, 6)
+    _clean(ax, "3. Soporte y resistencia")
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.88, bottom=0.04, wspace=0.12)
+    return to_png(fig)
+
+
 def build_signal_email(sig: Dict[str, Any], candles: Optional[pd.DataFrame], gran: str) -> Tuple[str, str, str, Dict[str, bytes]]:
     """(asunto, html, texto, imágenes) del correo de señal. Sin velas: el texto de siempre sin gráfico."""
     from email_alerts import signal_message
@@ -216,14 +298,21 @@ def build_signal_email(sig: Dict[str, Any], candles: Optional[pd.DataFrame], gra
             images["senal"] = plot_signal(pair, candles, sig, lv, gran)
         except Exception:
             log.exception("No se pudo dibujar la señal; se envía sin gráfico")
+    try:
+        images["guia"] = plot_guide()
+    except Exception:
+        log.exception("No se pudo dibujar la guía; se envía solo en texto")
     text_full = text + ("\n" + "\n".join(extra) if extra else "")
     guide_html = "".join(f"<li><b>{escape(k)}:</b> {escape(v)}</li>" for k, v in GUIDE)
     img = ('<img src="cid:senal" alt="Gráfico de la señal" style="width:100%;max-width:900px">'
-           if images else "")
+           if "senal" in images else "")
+    guide_img = ('<img src="cid:guia" alt="Guía: partes de una vela, velas de rechazo, soporte y resistencia" '
+                 'style="width:100%;max-width:900px">' if "guia" in images else "")
     html = f"""<html><body style="font-family:Arial,sans-serif;background:{SURFACE};color:{TEXT_PRIMARY}">
 <pre style="font-family:Arial,sans-serif;white-space:pre-wrap;font-size:14px">{escape(text_full)}</pre>
 {img}
 <h3 style="font-size:15px">Cómo leer el gráfico</h3>
+{guide_img}
 <ul style="font-size:13px;color:{TEXT_SECONDARY}">{guide_html}</ul>
 <p style="font-size:12px;color:{TEXT_SECONDARY}">Los soportes, resistencias y mechas son una ayuda para entrenar el
 ojo: el modelo no los usa para decidir. Lo que sí pesó está en "POR QUÉ".</p>
