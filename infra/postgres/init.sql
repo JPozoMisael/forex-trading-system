@@ -176,12 +176,17 @@ SELECT pg_temp.agregar_restriccion('orders', 'fk_orders_signal',
 -- Segunda barrera de "un trade por par": si dos señales del mismo par llegaran a la vez,
 -- la BD rechaza la segunda reserva y el risk-manager la descarta (fail-closed).
 -- Solo puede fallar en el INSERT de 'pending', nunca al avanzar de estado una orden existente.
+-- v4: la barrera va por grupo. El modelo tiene una orden activa por par y las operaciones de
+-- práctica/prueba (solo simulación, shared.models.SIDE_STRATEGIES) otra aparte, para que una
+-- práctica abierta no bloquee una señal del modelo en el mismo par. Lista igual a SIDE_STRATEGIES.
+DROP INDEX IF EXISTS ux_orders_un_activo_por_par;  -- v2: una sola por par, sin grupos
 DO $$
 BEGIN
-    CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_un_activo_por_par
-        ON orders (pair) WHERE status IN ('pending', 'submitting', 'filled');
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_un_activo_por_par_grupo
+        ON orders (pair, (COALESCE(strategy_name, '') IN ('prueba', 'practica')))
+        WHERE status IN ('pending', 'submitting', 'filled');
 EXCEPTION WHEN unique_violation THEN
-    RAISE WARNING 'No se creó ux_orders_un_activo_por_par: hay pares con varias órdenes activas. Ciérralas o cancélalas y vuelve a ejecutar.';
+    RAISE WARNING 'No se creó ux_orders_un_activo_por_par_grupo: hay pares con varias órdenes activas del mismo grupo. Ciérralas o cancélalas y vuelve a ejecutar.';
 END $$;
 
 DROP INDEX IF EXISTS idx_orders_status;                              -- índice de la v1, reemplazado
@@ -437,4 +442,7 @@ VALUES (2, 'Esquema v2: TimescaleDB opcional, restricciones, R por orden, tablas
 ON CONFLICT (version) DO NOTHING;
 INSERT INTO schema_version (version, description)
 VALUES (3, 'model_evaluations: lo que vio el modelo en cada vela, para el repaso del reporte')
+ON CONFLICT (version) DO NOTHING;
+INSERT INTO schema_version (version, description)
+VALUES (4, 'Una orden activa por par y por grupo (modelo / práctica-prueba)')
 ON CONFLICT (version) DO NOTHING;

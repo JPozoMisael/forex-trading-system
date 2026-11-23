@@ -185,3 +185,18 @@ def test_practice_carries_factors():
         "long": [{"dato": "rsi_14", "valor": 30.0, "aporte": 0.1}], "short": []}
     sig = practice_signal(pick_practice([d], d.now), d.now)
     assert sig.metadata["por_que"] == [{"dato": "rsi_14", "valor": 30.0, "aporte": 0.1}]
+
+
+def test_db_unique_index_groups_match_side_strategies():
+    """El índice de 'una orden activa por par' separa modelo y práctica/prueba con la misma lista que el código."""
+    import re
+    from pathlib import Path
+
+    from shared.models import SIDE_STRATEGIES
+
+    sql = (Path(__file__).parent.parent / "infra" / "postgres" / "init.sql").read_text(encoding="utf-8")
+    m = re.search(r"ux_orders_un_activo_por_par_grupo\s+ON orders \(pair, \(COALESCE\(strategy_name, ''\) IN \(([^)]*)\)",
+                  sql)
+    assert m, "no se encontró el índice por grupo en init.sql"
+    assert sorted(x.strip(" '") for x in m.group(1).split(",")) == sorted(SIDE_STRATEGIES)
+    assert "DROP INDEX IF EXISTS ux_orders_un_activo_por_par;" in sql

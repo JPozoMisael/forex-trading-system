@@ -63,7 +63,7 @@ Separan siempre por `execution_mode`, porque mezclar simulación (`sim`) con cue
 
 ## Protecciones que pone la BD
 
-- **Un trade activo por par** (`ux_orders_un_activo_por_par`): segunda barrera además de la regla del risk-manager. Si dos señales del mismo par llegan a la vez, la BD rechaza la segunda reserva y el risk-manager la descarta.
+- **Un trade activo por par y por grupo** (`ux_orders_un_activo_por_par_grupo`, v4): segunda barrera además de la regla del risk-manager. Si dos señales del mismo par y del mismo grupo llegan a la vez, la BD rechaza la segunda reserva y el risk-manager la descarta. Grupos: el modelo, y aparte la práctica/prueba (solo simulación, `SIDE_STRATEGIES`), para que una práctica abierta no bloquee al modelo. La lista del índice debe coincidir con `SIDE_STRATEGIES` (lo comprueba un test).
 - **CHECK** de valores válidos en `status`, `direction`, granularidad, `confidence` y precios de velas (`low > 0`, `low <= high`).
 - **`updated_at` automático** (trigger) en `orders`.
 - **`r_multiple`** calculado (`pnl / risk_amount`): el resultado de cada orden en R, la misma unidad que usa la validación del backtest.

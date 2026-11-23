@@ -4,7 +4,7 @@
 > `python scripts/diagnostico.py --guardar` y queda en [diagnosticos/](diagnosticos/).
 > Actualizar este archivo cada vez que se cierre o aparezca un pendiente.
 
-**Última revisión:** 2026-11-23 · 231 tests pasan.
+**Última revisión:** 2026-11-23 · 232 tests pasan.
 
 ## 1. Qué funciona hoy
 

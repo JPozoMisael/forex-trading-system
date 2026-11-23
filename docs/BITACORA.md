@@ -12,8 +12,9 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
   - Los datos viajan en `metadata.por_que` de la señal (modelo: `ml_strategy.py`; práctica: `practice.py`) y quedan guardados en `orders.metadata`.
   - Solo presentación: el modelo, el umbral y las reglas no cambian.
 - **Gráfico en el correo de señal** (`services/monitoring/src/signal_chart.py`): últimas 72 velas con techo y piso de 24 h, las 2 resistencias y soportes más cercanos (máximos/mínimos de giro de 120 velas agrupados a media vela típica, con número de toques), EMA 50/200, la operación (entrada, SL, TP) y la última vela señalada (cuerpo y mechas). El texto explica cada nivel con su distancia, avisa si hay una resistencia/soporte antes del objetivo y qué significa la última vela (rechazo arriba/abajo, indecisión). Trae una guía "Cómo leer el gráfico" con imagen (partes de una vela, velas de rechazo/indecisión/dominio, soporte y resistencia y cómo un techo roto pasa a ser piso). Es ayuda visual para entrenar el ojo: el modelo no usa estos niveles. Si no hay velas, sale el texto sin gráfico.
+- **Fallo arreglado (esquema v4)**: el 23/11 a las 04:00 una señal del modelo en XAU_USD llegó como "Alerta de riesgo": el risk-manager la aprobó (la práctica no bloquea al modelo), pero el índice único `ux_orders_un_activo_por_par` de la BD solo permitía una orden activa por par y ya había una práctica abierta en el oro. Ahora el índice es `ux_orders_un_activo_por_par_grupo`: una orden activa por par para el modelo y otra aparte para práctica/prueba. `run_all.py` lo aplica al arrancar (en el log: "✅ Esquema de la BD al día"). Un test compara la lista del índice con `SIDE_STRATEGIES`.
 - Decidido con el usuario: no se agregan instrumentos (Bitcoin, índices) hasta la revisión de febrero.
-- 231 tests pasan.
+- 232 tests pasan.
 
 ## 2026-11-17 (historial, desafío de cuenta pequeña y tiempo de respuesta) · DESKTOP-RC7UDV1
 
