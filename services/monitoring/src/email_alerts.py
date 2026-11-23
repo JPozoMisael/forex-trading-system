@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from shared.config import settings
 from shared.logger import get_logger
@@ -108,27 +108,7 @@ class EmailNotifier:
         if not settings.enable_email_signals:
             return
 
-        pair = sig.get("pair", "UNKNOWN")
-        direction = str(sig.get("direction", "")).upper()
-        strategy = sig.get("strategy_name", "N/A")
-        price = sig.get("entry_price", "N/A")
-        sl = sig.get("stop_loss", "N/A")
-        tp = sig.get("take_profit", "N/A")
-        conf = (sig.get("confidence") if sig.get("confidence") is not None else 1.0) * 100
-
-        subject = f"[Señal] {pair} {direction} - {strategy}"
-        body = (
-            f"NUEVA SEÑAL DETECTADA\n"
-            f"----------------------------------------\n"
-            f"Par: {pair}\n"
-            f"Acción: {direction}\n"
-            f"Estrategia: {strategy} (Confianza: {conf:.0f}%)\n"
-            f"Precio Estimado: {price}\n"
-            f"Stop Loss: {sl}\n"
-            f"Take Profit: {tp}\n"
-            f"----------------------------------------\n"
-            f"Enviado a Risk Manager para validación..."
-        )
+        subject, body = signal_message(sig)
         self.send_message(subject, body)
 
     def send_order_executed_alert(self, order: Dict[str, Any]):
@@ -242,3 +222,71 @@ def order_executed_message(order: Dict[str, Any]):
         + ("Protegida con Stop Loss y Take Profit desde que se abrió." if opened else "")
     )
     return subject, body
+
+
+def why_lines(factores: Any) -> List[str]:
+    """Los datos que más movieron la probabilidad, en palabras: '↑ en las últimas 24 horas el precio bajó 0.40 %'."""
+    from daily_report import _factor_text
+
+    lines, seen = [], set()
+    for f in factores or []:
+        try:
+            text = (f"{f['dato']}: sin dato todavía" if f.get("valor") is None
+                    else _factor_text(f["dato"], float(f["valor"]), settings.granularity_minutes))
+            up = float(f["aporte"]) > 0
+        except (KeyError, TypeError, ValueError):
+            continue
+        if text in seen:  # hora_sin y hora_cos son el mismo dato para el usuario
+            continue
+        seen.add(text)
+        lines.append(f"{'↑ a favor' if up else '↓ en contra'}: {text}")
+    return lines
+
+
+def signal_message(sig: Dict[str, Any]):
+    """(asunto, cuerpo) del aviso de señal: qué operar, niveles redondeados y por qué lo cree el modelo."""
+    from charts import digits, move_text
+
+    pair = sig.get("pair", "UNKNOWN")
+    side = _SIDE_ES.get(str(sig.get("direction", "")).upper(), str(sig.get("direction", "")).upper())
+    strategy = sig.get("strategy_name") or ""
+    kind = {"practica": " · práctica", "prueba": " · prueba"}.get(strategy, "")
+    conf = sig.get("confidence")
+    meta = sig.get("metadata") or {}
+    umbral = meta.get("umbral")
+    d = digits(pair)
+
+    def px(key):
+        v = sig.get(key)
+        return f"{float(v):.{d}f}" if isinstance(v, (int, float)) else "-"
+
+    def dist(key):
+        v, e = sig.get(key), sig.get("entry_price")
+        return f" ({move_text(pair, float(v) - float(e))})" if isinstance(v, (int, float)) and e else ""
+
+    conf_txt = f"{float(conf) * 100:.0f} %" if isinstance(conf, (int, float)) else "-"
+    subject = f"[Señal] {pair} {side}{kind} · {conf_txt}"
+    lines = [
+        f"SEÑAL: {side} {pair}{kind}",
+        "----------------------------------------",
+        f"Entrada aprox.: {px('entry_price')}",
+        f"Stop Loss: {px('stop_loss')}{dist('stop_loss')}",
+        f"Take Profit: {px('take_profit')}{dist('take_profit')}",
+        "----------------------------------------",
+    ]
+    if strategy == "prueba":
+        lines.append("POR QUÉ: es una operación de prueba enviada a mano para revisar el circuito; no es un análisis.")
+    else:
+        lines.append(f"POR QUÉ: confianza {conf_txt}. En 15 años de historia, de las situaciones parecidas a esta, "
+                     f"~{conf_txt} tocaron el objetivo antes que el stop.")
+        if strategy == "practica" and isinstance(umbral, (int, float)):
+            lines.append(f"No llega al {float(umbral) * 100:.0f} % que exige el modelo: es la mejor del momento, "
+                         f"se abre como práctica para medir.")
+        why = why_lines(meta.get("por_que"))
+        if why:
+            lines.append("Lo que más pesó:")
+            lines += [f"  {w}" for w in why]
+        lines.append("Lo que el modelo NO mira: noticias, soportes y resistencias dibujados ni otros mercados; "
+                     "solo los datos de las últimas velas.")
+    lines += ["----------------------------------------", "Enviada al gestor de riesgo para validar el lote."]
+    return subject, "\n".join(lines)

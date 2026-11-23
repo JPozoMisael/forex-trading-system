@@ -147,7 +147,9 @@ class MLStrategy(BaseStrategy):
             stop_loss=round(close - sign * self.sl_atr * atr, 5),
             take_profit=round(close + sign * self.tp_atr * atr, 5),
             metadata={"p_long": round(p_long, 4), "p_short": round(p_short, 4), "atr": atr,
-                      "umbral": self.threshold, "horizonte_velas": self.horizon},
+                      "umbral": self.threshold, "horizonte_velas": self.horizon,
+                      # los datos que más movieron la probabilidad del lado elegido (para el correo)
+                      "por_que": ((self.last_state or {}).get("factores") or {}).get("long" if sign > 0 else "short", [])},
         )
 
     def _plan_state(self, df: pd.DataFrame, close: float, atr: float) -> Dict[str, Any]:

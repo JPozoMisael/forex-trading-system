@@ -8,7 +8,7 @@ los mismos SL/TP en ATR) y manda los mismos correos, pero con la estrategia
 "practica": se cuenta aparte, no mueve el balance simulado y no bloquea las
 señales del modelo. Solo con DRY_RUN.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
 
@@ -29,6 +29,7 @@ class Practice:
     entry: float
     stop_loss: float
     take_profit: float
+    factores: List[Any] = field(default_factory=list)
 
 
 def practice_enabled() -> bool:
@@ -56,7 +57,8 @@ def pick_practice(datas: List[Any], now: datetime) -> Optional[Practice]:
             prob = float(plan["p_long" if buy else "p_short"])
             if best is None or prob > best.prob:
                 sl, tp = _plan_levels(plan, entry, buy)
-                best = Practice(d.pair, buy, prob, float(plan["umbral"]), entry, round(sl, 5), round(tp, 5))
+                best = Practice(d.pair, buy, prob, float(plan["umbral"]), entry, round(sl, 5), round(tp, 5),
+                                list((plan.get("factores") or {}).get("long" if buy else "short") or []))
     return best
 
 
@@ -70,7 +72,7 @@ def practice_signal(pr: Practice, now: datetime) -> Signal:
         entry_price=pr.entry,
         stop_loss=pr.stop_loss,
         take_profit=pr.take_profit,
-        metadata={"practica": True, "umbral": pr.umbral},
+        metadata={"practica": True, "umbral": pr.umbral, "por_que": pr.factores},
     )
 
 

@@ -5,6 +5,15 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
+## 2026-11-23 (el porqué de cada señal) · DESKTOP-RC7UDV1
+
+- Despliegue confirmado: el correo de orden ya llega como "ORDEN ABIERTA".
+- **Correo de señal con "POR QUÉ"** (`signal_message` en `services/monitoring/src/email_alerts.py`): confianza explicada en palabras, niveles redondeados con la distancia en pips o USD/oz, y los 3 datos que más movieron la probabilidad del lado elegido (↑ a favor / ↓ en contra, misma descomposición de LightGBM que "Lo que más pesó" del reporte). La práctica aclara que no llega al umbral. Dice también lo que el modelo NO mira (noticias, soportes/resistencias dibujados, otros mercados).
+  - Los datos viajan en `metadata.por_que` de la señal (modelo: `ml_strategy.py`; práctica: `practice.py`) y quedan guardados en `orders.metadata`.
+  - Solo presentación: el modelo, el umbral y las reglas no cambian.
+- Decidido con el usuario: no se agregan instrumentos (Bitcoin, índices) hasta la revisión de febrero.
+- 226 tests pasan.
+
 ## 2026-11-17 (historial, desafío de cuenta pequeña y tiempo de respuesta) · DESKTOP-RC7UDV1
 
 - Primera práctica cerrada: VENTA EUR_USD al 39 %, +29.6 pips, +$145.04 (+1.49 R). Las diferencias de precio entre el correo de señal y el de cierre son el medio spread del simulador (SL/TP se mueven igual; distancias idénticas).

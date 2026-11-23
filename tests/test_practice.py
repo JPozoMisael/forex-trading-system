@@ -157,3 +157,31 @@ def test_operaciones_script_formats_rows():
     assert "práctica" in line and "VENTA" in line and "conf 41 %" in line and "+101.86 USD (+1.50 R, tp)" in line
     assert "abierta" in mod.fmt_row((13, None, "EUR_USD", "ML_LightGBM", "buy", None, 0.5, 1.1, None, None, None,
                                      None, "filled"))
+
+
+def test_signal_email_explains_why():
+    from email_alerts import signal_message
+
+    factores = [{"dato": "ret_24", "valor": -0.004, "aporte": 0.12},
+                {"dato": "hora_sin", "valor": 0.5, "aporte": -0.05},
+                {"dato": "hora_cos", "valor": 0.8, "aporte": -0.03},
+                {"dato": "rsi_14", "valor": 28.0, "aporte": 0.08}]
+    subject, body = signal_message({"pair": "EUR_USD", "direction": "buy", "strategy_name": "practica",
+                                    "confidence": 0.44, "entry_price": 1.094571, "stop_loss": 1.0924,
+                                    "take_profit": 1.09783, "metadata": {"umbral": 0.5, "por_que": factores}})
+    assert subject == "[Señal] EUR_USD COMPRA · práctica · 44 %"
+    assert "Entrada aprox.: 1.09457" in body and "No llega al 50 %" in body
+    assert "↑ a favor: en las últimas " in body and "el precio bajó 0.40 %" in body  # el periodo depende de la temporalidad
+    assert "↑ a favor: RSI 14 en 28" in body
+    assert body.count("la hora del día") == 1  # hora_sin y hora_cos se muestran una vez
+    _, model = signal_message({"pair": "XAU_USD", "direction": "sell", "strategy_name": "ML_LightGBM",
+                               "confidence": 0.52, "entry_price": 3788.891, "metadata": {}})
+    assert "confianza 52 %" in model and "No llega" not in model and "Lo que más pesó" not in model
+
+
+def test_practice_carries_factors():
+    d = _data("EUR_USD", 0.41, 0.33)
+    d.strategy_state["estrategias"]["ML_LightGBM"]["factores"] = {
+        "long": [{"dato": "rsi_14", "valor": 30.0, "aporte": 0.1}], "short": []}
+    sig = practice_signal(pick_practice([d], d.now), d.now)
+    assert sig.metadata["por_que"] == [{"dato": "rsi_14", "valor": 30.0, "aporte": 0.1}]
