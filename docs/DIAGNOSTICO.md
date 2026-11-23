@@ -4,7 +4,7 @@
 > `python scripts/diagnostico.py --guardar` y queda en [diagnosticos/](diagnosticos/).
 > Actualizar este archivo cada vez que se cierre o aparezca un pendiente.
 
-**Última revisión:** 2026-11-23 · 226 tests pasan.
+**Última revisión:** 2026-11-23 · 231 tests pasan.
 
 ## 1. Qué funciona hoy
 
@@ -20,6 +20,7 @@
 | Repaso de las 8:00: qué habría pasado cada hora con la compra y la venta (objetivo / stop / en curso) y acumulado en vivo por tramo de probabilidad. El strategy-engine guarda cada evaluación en `model_evaluations` (esquema v3) | ✅ código · ⏳ falta `init_db.py` en el servidor (P17) | `review.py`, `signal_publisher.py`, `infra/postgres/init.sql` |
 | Herramientas de análisis del modelo: calibración en la prueba final y estudio de patrones con herramientas de TradingView (conjunto de features `tradingview`) | ✅ | `backtesting/src/run_calibracion.py`, `run_patrones.py`, `ml/tradingview.py` |
 | Operación de práctica en cada reporte (la de mayor probabilidad aunque no llegue al 50 %, contada aparte), historial de operaciones cerradas con confianza y lote, desafío $20 → $300 (solo cálculo), correo de orden en palabras ("ABIERTA") y `scripts/operaciones.py` para ver las operaciones de la BD | ✅ | `practice.py`, `challenge.py`, `email_alerts.py`, `scripts/operaciones.py` |
+| Correo de señal con "POR QUÉ" (datos que más pesaron) y gráfico de soportes, resistencias, techo/piso de 24 h y anatomía de la última vela | ✅ | `email_alerts.py`, `signal_chart.py` |
 | "Lo que está moviendo el mundo": Claude resume los titulares de 24 h | ✅ código · ⏳ falta `ANTHROPIC_API_KEY` en Dokploy | `news_digest.py` |
 | Dashboard Grafana | ✅ básico | `infra/grafana/dashboards/trading_overview.json` |
 | Despliegue de los 5 servicios en un solo contenedor (Dokploy) | ✅ | `Dockerfile` raíz + `scripts/run_all.py` |

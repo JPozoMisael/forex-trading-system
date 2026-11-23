@@ -23,6 +23,7 @@ from email_alerts import EmailNotifier
 from health_check import HealthChecker, failure_message
 from daily_report import due_slot, send_daily_report
 from trade_report import send_trade_report
+from signal_chart import send_signal_report
 
 log = get_logger(__name__)
 
@@ -203,6 +204,8 @@ def main():
                 try:
                     if label == "Email" and channel == settings.channel_orders_closed:
                         send_trade_report(email_notifier, data)  # con gráfico de la operación
+                    elif label == "Email" and channel == settings.channel_signals_new:
+                        send_signal_report(email_notifier, data)  # con soportes, resistencias y mechas
                     else:
                         getattr(target, method)(data)
                 except Exception as ev_err:
