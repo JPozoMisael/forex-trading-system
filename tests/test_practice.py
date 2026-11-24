@@ -200,3 +200,25 @@ def test_db_unique_index_groups_match_side_strategies():
     assert m, "no se encontró el índice por grupo en init.sql"
     assert sorted(x.strip(" '") for x in m.group(1).split(",")) == sorted(SIDE_STRATEGIES)
     assert "DROP INDEX IF EXISTS ux_orders_un_activo_por_par;" in sql
+
+
+def test_email_accepts_several_recipients(monkeypatch):
+    import email_alerts
+
+    sent = {}
+
+    class FakeSMTP:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def starttls(self): pass
+        def login(self, *a): pass
+        def sendmail(self, sender, to, msg): sent.update(to=to, msg=msg)
+
+    monkeypatch.setattr(email_alerts.smtplib, "SMTP", FakeSMTP)
+    n = email_alerts.EmailNotifier(sender="yo@x.com", app_password="clave", recipient="a@x.com, b@y.com ,")
+    assert n.recipients == ["a@x.com", "b@y.com"] and n.is_configured
+    assert n.send_message("Hola", "cuerpo")
+    assert sent["to"] == ["a@x.com", "b@y.com"] and "To: a@x.com, b@y.com" in sent["msg"]
+    assert n.send_html("Hola", "<p>x</p>", "x")
+    assert sent["to"] == ["a@x.com", "b@y.com"]

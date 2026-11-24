@@ -26,10 +26,13 @@ class EmailNotifier:
     ):
         self.sender = sender or settings.email_sender
         self.app_password = app_password or settings.email_app_password
-        self.recipient = recipient or settings.email_recipient or self.sender
+        # Uno o varios destinatarios separados por coma: "a@x.com, b@y.com"
+        raw = recipient or settings.email_recipient or self.sender or ""
+        self.recipients = [r.strip() for r in raw.split(",") if r.strip()]
+        self.recipient = ", ".join(self.recipients)
         self.smtp_host = settings.email_smtp_host
         self.smtp_port = settings.email_smtp_port
-        self.is_configured = bool(self.sender and self.app_password and self.recipient)
+        self.is_configured = bool(self.sender and self.app_password and self.recipients)
 
         if self.is_configured:
             log.info(f"Notificador Email inicializado y habilitado (destino: {self.recipient}).")
@@ -53,7 +56,7 @@ class EmailNotifier:
             with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=10) as server:
                 server.starttls()
                 server.login(self.sender, self.app_password)
-                server.sendmail(self.sender, [self.recipient], msg.as_string())
+                server.sendmail(self.sender, self.recipients, msg.as_string())
             log.debug(f"Correo '{subject}' enviado exitosamente.")
             return True
         except Exception as e:
@@ -84,7 +87,7 @@ class EmailNotifier:
             with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=20) as server:
                 server.starttls()
                 server.login(self.sender, self.app_password)
-                server.sendmail(self.sender, [self.recipient], msg.as_string())
+                server.sendmail(self.sender, self.recipients, msg.as_string())
             log.info(f"Correo '{subject}' enviado a {self.recipient}.")
             return True
         except Exception as e:

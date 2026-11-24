@@ -9,6 +9,7 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 - Medido el movimiento promedio por hora de Ecuador (H1, 2021-2026): las 05:00 es hora tranquila (EUR_USD 107, oro 86, con 100 = promedio); lo más movido es 07:00–10:00 y la apertura de Londres (02:00–03:00). Detalle en DIAGNOSTICO.md, sección 3.
 - Para medir las 5:00 sin tocar código: `REPORT_TIMES=01:30,05:00,08:00` en Dokploy (decide el usuario). La práctica de cada turno queda con su hora de apertura para compararla en febrero.
+- `EMAIL_RECIPIENT` acepta varios correos separados por coma (todos los avisos y reportes llegan a todos).
 - P19 añadido al diagnóstico (la práctica bloqueaba al modelo; esquema v4 pendiente de verificar en el log del redeploy).
 
 ## 2026-11-23 (el porqué de cada señal) · DESKTOP-RC7UDV1
