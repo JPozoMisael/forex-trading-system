@@ -3,7 +3,8 @@ import pandas as pd
 import pytest
 
 from data_loader import generate_synthetic_forex_data
-from signal_chart import build_signal_email, candle_anatomy, key_levels, level_lines, send_signal_report
+from signal_chart import (build_signal_email, candle_anatomy, key_levels, level_lines, send_signal_report,
+                          timeframe_lines, timeframe_trends)
 
 
 def _candles(n=300):
@@ -59,6 +60,47 @@ def test_signal_email_has_chart_and_guide():
     assert 'src="cid:guia"' in html
     assert 'src="cid:senal"' in html and "Cómo leer el gráfico" in html and "Mechas" in html
     assert "Techo de 24 h" in text and "Última vela" in text and "POR QUÉ" in text
+
+
+def _trending(n, step, freq, start=1.10):
+    """Velas que suben (step > 0) o bajan (step < 0) parejo: tendencia clara por EMAs."""
+    idx = pd.date_range("2026-01-01", periods=n, freq=freq, tz="UTC")
+    close = pd.Series([start + step * i for i in range(n)], index=idx)
+    return pd.DataFrame({"open": close - step / 2, "high": close + abs(step), "low": close - abs(step),
+                         "close": close})
+
+
+def test_timeframe_trends_order_and_same_price():
+    h1 = _trending(300, 0.0001, "h")
+    frames = {"D": _trending(290, 0.0001, "D", start=1.07), "H4": _trending(290, -0.0001, "4h", start=1.20)}
+    trends = timeframe_trends("EUR_USD", h1, "H1", frames)
+    # De mayor a menor, todas contra el último precio de H1 (1.1299)
+    assert [n for n, _ in trends] == ["Diario", "4 horas", "1 hora"]
+    assert trends == [("Diario", "alcista"), ("4 horas", "bajista"), ("1 hora", "alcista")]
+    # Sin velas suficientes en una temporalidad, se omite
+    assert [n for n, _ in timeframe_trends("EUR_USD", h1, "H1", {"D": h1.head(10)})] == ["1 hora"]
+
+
+def test_timeframe_lines_count_in_favor():
+    sig_buy = {"direction": "buy"}
+    all_up = [("Diario", "alcista"), ("4 horas", "alcista"), ("1 hora", "alcista")]
+    assert "Todas a favor de la compra." in timeframe_lines(sig_buy, all_up)
+    assert "Todas en contra de la venta: va contra la corriente." in timeframe_lines({"direction": "sell"}, all_up)
+    mixed = [("Diario", "bajista"), ("4 horas", "mixta"), ("1 hora", "alcista")]
+    lines = timeframe_lines(sig_buy, mixed)
+    assert "Diario: bajista · 4 horas: mixta · 1 hora: alcista" in lines
+    assert "De 3 temporalidades: 1 a favor, 1 en contra, 1 mixta(s) de la compra." in lines
+    assert timeframe_lines(sig_buy, []) == []
+
+
+def test_signal_email_includes_timeframes():
+    df = _candles()
+    frames = {"D": _trending(290, 0.0001, "D", start=1.0), "H4": _trending(290, 0.0001, "4h", start=1.0)}
+    _, html, text, _ = build_signal_email(_sig(df), df, "H1", frames)
+    assert "TEMPORALIDADES (contexto; el modelo no las usa para decidir):" in text
+    assert "Diario:" in text and "4 horas:" in text and "1 hora:" in text
+    assert text.index("TEMPORALIDADES") < text.index("GRÁFICO")
+    assert "TEMPORALIDADES" in html
 
 
 def test_without_candles_sends_text_only():

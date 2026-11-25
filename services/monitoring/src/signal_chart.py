@@ -11,6 +11,11 @@ niveles se calculan con una regla simple y fija para que siempre se dibujen igua
   entre las PIVOT velas de cada lado) de las últimas LOOKBACK velas, agrupando
   los que están a menos de media vela típica (ATR). Cuantos más "toques", más
   gente mira ese precio.
+- Temporalidades: tendencia en diario, 4 horas y la del gráfico con la regla del
+  reporte (alcista si precio > EMA 50 > EMA 200, bajista al revés, si no mixta) y
+  cuántas están a favor de la operación. También es solo contexto: el modelo no
+  la usa (se probó en P16 y no mejoró; el filtro está pre-registrado en config.yaml,
+  sección filtro_temporalidades).
 """
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -20,9 +25,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from charts import (DOWN, GRID, REFERENCE, SURFACE, TEXT_PRIMARY, TEXT_SECONDARY, UP, digits, display_name,
-                    draw_candles, draw_emas, draw_position, fetch_recent, fit_ylim, move_text, new_figure,
-                    price_tag, style_axes, time_ticks, to_png)
+from charts import (DOWN, GRID, REFERENCE, SURFACE, TEXT_PRIMARY, TEXT_SECONDARY, TIMEFRAMES, UP, digits,
+                    display_name, draw_candles, draw_emas, draw_position, fetch_recent, fit_ylim, move_text,
+                    new_figure, price_tag, style_axes, time_ticks, timeframe_summary, to_png)
 from shared.config import settings
 from shared.logger import get_logger
 from shared.timefmt import zona
@@ -33,6 +38,8 @@ BARS = 72        # velas que se ven en el gráfico (3 días en H1)
 LOOKBACK = 120   # velas donde se buscan soportes y resistencias
 PIVOT = 3        # velas a cada lado para que un máximo/mínimo cuente como giro
 ZONE_COLORS = {"resistencia": "#c0392b", "soporte": "#2a78d6"}
+CONTEXT_TFS = ("D", "H4")  # temporalidades mayores que se leen además de la del gráfico
+TF_NAMES = {**{g: n for g, (n, _) in TIMEFRAMES.items()}, "H1": "1 hora", "M5": "5 minutos"}
 
 
 def atr(df: pd.DataFrame, period: int = 14) -> float:
@@ -122,6 +129,45 @@ def level_lines(pair: str, sig: Dict[str, Any], lv: Dict[str, Any]) -> List[str]
             lines.append(f"Camino al objetivo: {'ninguna resistencia marcada' if buy else 'ningún soporte marcado'} "
                          "entre la entrada y el objetivo.")
     return lines
+
+
+def timeframe_trends(pair: str, candles: Optional[pd.DataFrame], gran: str,
+                     frames: Dict[str, pd.DataFrame]) -> List[Tuple[str, str]]:
+    """
+    (nombre, tendencia) del diario, 4 horas y la temporalidad del gráfico, de mayor a menor.
+    Todas contra el mismo precio: el último cierre del gráfico (en el diario, la vela
+    de hoy aún no cerró). Las que no tienen velas suficientes se omiten.
+    """
+    price = float(candles["close"].iloc[-1]) if candles is not None and len(candles) else None
+    out: List[Tuple[str, str]] = []
+    for g, df in [(g, frames.get(g)) for g in CONTEXT_TFS if g != gran.upper()] + [(gran.upper(), candles)]:
+        if df is None or len(df) < 30:
+            continue
+        s = timeframe_summary(df, pair, min(len(df), TIMEFRAMES.get(g, (None, 90))[1]), price=price)
+        out.append((TF_NAMES.get(g, g), s["tendencia"]))
+    return out
+
+
+def timeframe_lines(sig: Dict[str, Any], trends: List[Tuple[str, str]]) -> List[str]:
+    """Las tendencias en palabras y cuántas están a favor de la operación."""
+    if not trends:
+        return []
+    buy = str(sig.get("direction", "")).lower() == "buy"
+    favor, contra = ("alcista", "bajista") if buy else ("bajista", "alcista")
+    n_fav = sum(t == favor for _, t in trends)
+    n_con = sum(t == contra for _, t in trends)
+    n_mix = len(trends) - n_fav - n_con
+    op = "la compra" if buy else "la venta"
+    if n_fav == len(trends):
+        resumen = f"Todas a favor de {op}."
+    elif n_con == len(trends):
+        resumen = f"Todas en contra de {op}: va contra la corriente."
+    else:
+        partes = [f"{n_fav} a favor", f"{n_con} en contra"] + ([f"{n_mix} mixta(s)"] if n_mix else [])
+        resumen = f"De {len(trends)} temporalidades: " + ", ".join(partes) + f" de {op}."
+    return (["", "TEMPORALIDADES (contexto; el modelo no las usa para decidir):",
+             " · ".join(f"{name}: {t}" for name, t in trends), resumen,
+             "Tendencia alcista = precio sobre EMA 50 y EMA 50 sobre EMA 200 (bajista al revés; si no, mixta)."])
 
 
 def candle_lines(pair: str, an: Dict[str, Any]) -> List[str]:
@@ -281,19 +327,27 @@ def plot_guide() -> bytes:
     return to_png(fig)
 
 
-def build_signal_email(sig: Dict[str, Any], candles: Optional[pd.DataFrame], gran: str) -> Tuple[str, str, str, Dict[str, bytes]]:
-    """(asunto, html, texto, imágenes) del correo de señal. Sin velas: el texto de siempre sin gráfico."""
+def build_signal_email(sig: Dict[str, Any], candles: Optional[pd.DataFrame], gran: str,
+                       frames: Optional[Dict[str, pd.DataFrame]] = None) -> Tuple[str, str, str, Dict[str, bytes]]:
+    """
+    (asunto, html, texto, imágenes) del correo de señal. Sin velas: el texto de siempre sin gráfico.
+    `frames`: velas de las temporalidades mayores (CONTEXT_TFS) para la línea de tendencias.
+    """
     from email_alerts import signal_message
 
     subject, text = signal_message(sig)
     pair = sig.get("pair", "UNKNOWN")
     images: Dict[str, bytes] = {}
     extra: List[str] = []
+    try:
+        extra += timeframe_lines(sig, timeframe_trends(pair, candles, gran, frames or {}))
+    except Exception:
+        log.exception("No se pudieron leer las tendencias por temporalidad; se envía sin ellas")
     if candles is not None and len(candles) >= 30:
         lv = key_levels(candles)
         an = candle_anatomy(candles.iloc[-1], lv["atr"])
-        extra = (["", "GRÁFICO (ayuda para leerlo; el modelo no usa estos niveles):"]
-                 + level_lines(pair, sig, lv) + candle_lines(pair, an))
+        extra += (["", "GRÁFICO (ayuda para leerlo; el modelo no usa estos niveles):"]
+                  + level_lines(pair, sig, lv) + candle_lines(pair, an))
         try:
             images["senal"] = plot_signal(pair, candles, sig, lv, gran)
         except Exception:
@@ -314,8 +368,8 @@ def build_signal_email(sig: Dict[str, Any], candles: Optional[pd.DataFrame], gra
 <h3 style="font-size:15px">Cómo leer el gráfico</h3>
 {guide_img}
 <ul style="font-size:13px;color:{TEXT_SECONDARY}">{guide_html}</ul>
-<p style="font-size:12px;color:{TEXT_SECONDARY}">Los soportes, resistencias y mechas son una ayuda para entrenar el
-ojo: el modelo no los usa para decidir. Lo que sí pesó está en "POR QUÉ".</p>
+<p style="font-size:12px;color:{TEXT_SECONDARY}">Las temporalidades, soportes, resistencias y mechas son una ayuda
+para entrenar el ojo: el modelo no los usa para decidir. Lo que sí pesó está en "POR QUÉ".</p>
 </body></html>"""
     return subject, html, text_full, images
 
@@ -333,7 +387,15 @@ def send_signal_report(email, sig: Dict[str, Any], now: Optional[datetime] = Non
             candles = fetch_recent(sig["pair"], gran, max(BARS, LOOKBACK), now, fetch=fetch)
         except Exception:
             log.exception("No se pudieron leer las velas para el gráfico de la señal")
-        subject, html, text, images = build_signal_email(sig, candles, gran)
+        frames: Dict[str, pd.DataFrame] = {}
+        for g in CONTEXT_TFS:
+            if g == gran.upper():
+                continue
+            try:
+                frames[g] = fetch_recent(sig["pair"], g, TIMEFRAMES[g][1], now, fetch=fetch)
+            except Exception as e:
+                log.warning(f"Señal: no se pudieron bajar velas {g} de {sig['pair']}: {e}")
+        subject, html, text, images = build_signal_email(sig, candles, gran, frames)
         return email.send_html(subject, html, text, images=images)
     except Exception:
         log.exception("No se pudo armar el correo de la señal; se envía el aviso en texto")
