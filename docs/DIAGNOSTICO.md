@@ -4,7 +4,7 @@
 > `python scripts/diagnostico.py --guardar` y queda en [diagnosticos/](diagnosticos/).
 > Actualizar este archivo cada vez que se cierre o aparezca un pendiente.
 
-**Última revisión:** 2026-11-24 · 233 tests pasan.
+**Última revisión:** 2026-11-25 · 236 tests pasan.
 
 ## 1. Qué funciona hoy
 
@@ -20,7 +20,7 @@
 | Repaso de las 8:00: qué habría pasado cada hora con la compra y la venta (objetivo / stop / en curso) y acumulado en vivo por tramo de probabilidad. El strategy-engine guarda cada evaluación en `model_evaluations` (esquema v3) | ✅ código · ⏳ falta `init_db.py` en el servidor (P17) | `review.py`, `signal_publisher.py`, `infra/postgres/init.sql` |
 | Herramientas de análisis del modelo: calibración en la prueba final y estudio de patrones con herramientas de TradingView (conjunto de features `tradingview`) | ✅ | `backtesting/src/run_calibracion.py`, `run_patrones.py`, `ml/tradingview.py` |
 | Operación de práctica en cada reporte (la de mayor probabilidad aunque no llegue al 50 %, contada aparte), historial de operaciones cerradas con confianza y lote, desafío $20 → $300 (solo cálculo), correo de orden en palabras ("ABIERTA") y `scripts/operaciones.py` para ver las operaciones de la BD | ✅ | `practice.py`, `challenge.py`, `email_alerts.py`, `scripts/operaciones.py` |
-| Correo de señal con "POR QUÉ" (datos que más pesaron) y gráfico de soportes, resistencias, techo/piso de 24 h y anatomía de la última vela | ✅ | `email_alerts.py`, `signal_chart.py` |
+| Correo de señal con "POR QUÉ" (datos que más pesaron), tendencia en diario / 4 horas / 1 hora y cuántas están a favor (solo contexto: el modelo no la usa), y gráfico de soportes, resistencias, techo/piso de 24 h y anatomía de la última vela | ✅ | `email_alerts.py`, `signal_chart.py` |
 | "Lo que está moviendo el mundo": Claude resume los titulares de 24 h | ✅ código · ⏳ falta `ANTHROPIC_API_KEY` en Dokploy | `news_digest.py` |
 | Dashboard Grafana | ✅ básico | `infra/grafana/dashboards/trading_overview.json` |
 | Despliegue de los 5 servicios en un solo contenedor (Dokploy) | ✅ | `Dockerfile` raíz + `scripts/run_all.py` |
@@ -52,7 +52,7 @@
 
 ## 3. Riesgos a vigilar
 
-- **Plan decidido el 2026-11-09 (revisión el 2027-02-09)**: el sistema sigue en simulación sin cambios; **no se prueban estrategias nuevas** hasta la revisión (cada prueba sube la exigencia); el usuario opera a mano en su demo de XM (1 % de riesgo, stop siempre, anotar el motivo) y exporta cada mes el informe de historial de MT5 para analizarlo con el mismo rigor. En la revisión se decide con la tabla de calibración en vivo y esas estadísticas. Dinero real solo con evidencia.
+- **Plan decidido el 2026-11-09 (revisión el 2027-02-09)**: el sistema sigue en simulación sin cambios; **no se prueban estrategias nuevas** hasta la revisión (cada prueba sube la exigencia); el usuario opera a mano en su demo de XM (1 % de riesgo, stop siempre, anotar el motivo) y exporta cada mes el informe de historial de MT5 para analizarlo con el mismo rigor. En la revisión se decide con la tabla de calibración en vivo y esas estadísticas. Dinero real solo con evidencia. Queda **pre-registrada** (2026-11-25) para decidir en la revisión una prueba de filtro de temporalidades: el modelo solo opera a favor de la tendencia de 4 horas y diaria (`config.yaml`, sección `filtro_temporalidades`; serían 42 combinaciones, p < 0.00119). No se corre antes.
 - **Calibración en vivo (primeras ~2 semanas, reporte del 2026-11-09)**: va al revés. EUR_USD compra: el tramo 40–50 % tocó el objetivo el 21 % frente al 40 % del tramo < 40 %; venta 40–50 %: 8 %. Oro compra < 40 %: 69 %. Pocas horas y correlacionadas, pero coincide con P16.
 - **Sin evidencia suficiente para dinero real**: EUR_USD, USD_JPY y XAU_USD salieron positivos pero no concluyentes en la prueba final. Con 39 combinaciones probadas, el umbral para dinero real es p < 0.00128 (Bonferroni), y la calibración (P16) indica que el modelo casi no separa horas buenas de malas. Mantener `DRY_RUN=true` y comparar el paper trading con `produccion.referencia_backtest` y con el acumulado en vivo del reporte.
 - **Cada prueba nueva sube la exigencia**: van 39 combinaciones probadas (4 setups de trader, retroceso al 50 % en oro M5 y seguimiento de tendencia Donchian 55/20 en 8 instrumentos, ninguno aprobado); el umbral para dinero real es p < 0.00128. Pre-registrar en `config.yaml` antes de correr.

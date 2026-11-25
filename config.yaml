@@ -248,6 +248,36 @@ tendencia:
   financiamiento_anual_pct: 3.0
   pruebas_previas: 38
 
+# --------------------------------------------------------------------------
+# Filtro de temporalidades mayores sobre el modelo de producción. PRE-REGISTRADO el
+# 2026-11-25, antes de programarlo y de mirar resultados. NO CORRER antes de la revisión
+# del 2027-02-09 (plan del 2026-11-09: no se prueban estrategias nuevas hasta entonces);
+# en la revisión se decide si se corre.
+# Pregunta: ¿el modelo gana más si solo opera a favor de la tendencia de 4 horas y diario,
+# como hacen los traders que miran varias temporalidades?
+#   - Mismo modelo de producción (sección `modelo`, features base, umbral 0.50, SL 2 ATR,
+#     TP 3 ATR, horizonte 48 velas), mismos instrumentos (produccion.activos) en H1, sin
+#     ajustar nada. Mismas predicciones fuera de muestra y costes que run_instrumentos.py.
+#   - Filtro: una COMPRA del modelo solo se toma si la tendencia de 4 horas Y la diaria son
+#     alcistas; una VENTA, si las dos son bajistas. Si no, se descarta. "Tendencia" = la
+#     regla del reporte (precio > EMA 50 > EMA 200), con velas H4 y diarias ya cerradas
+#     (ml/tradingview.py: tend_h4, tend_d). Nada más cambia.
+#   - Se evalúa el DESARROLLO (antes de validacion.inicio_prueba_final) y la PRUEBA FINAL
+#     por separado, y en cada periodo se compara con el mismo modelo SIN filtro.
+#   - Criterio para paper trading (por instrumento): veredicto positivo y retorno > 0 en
+#     LOS DOS periodos, Y expectativa (R por operación) mayor que sin filtro en LOS DOS.
+#     Menos de validacion.min_operaciones operaciones = INSUFICIENTE = no cumple (el modelo
+#     ya opera ~2-3 veces al mes y el filtro lo reduce).
+#   - Dinero real: VENTAJA CON EVIDENCIA en la final con p < 0.05 / 42 (39 previas + 3).
+#   - Una sola pasada (script por programar): python backtesting/src/run_filtro_temporalidades.py
+#   - Si un instrumento cumple, activarlo en vivo es un cambio aparte que se decide después.
+filtro_temporalidades:
+  estado: pendiente  # no correr antes del 2027-02-09
+  instrumentos: [EUR_USD, USD_JPY, XAU_USD]
+  temporalidad: H1
+  exigir: [tend_h4, tend_d]
+  pruebas_previas: 39
+
 # Instrumentos que opera el strategy-engine (cada uno con su modelo). Solo se
 # añaden los que cumplan la regla de arriba.
 # Resultado del 2026-10-28 (reports/20261028_1541_instrumentos.md): en H1 cumplen
