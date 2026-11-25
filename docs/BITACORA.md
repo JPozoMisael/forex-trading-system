@@ -5,7 +5,13 @@ Formato: fecha · equipo · qué se hizo · qué quedó pendiente / siguiente pa
 
 ---
 
-## 2026-11-24 (¿operar a las 5 a. m.?) · DESKTOP-RC7UDV1
+## 2026-11-24 (dashboard web, solo lectura) · DESKTOP-QQ3KOCN
+
+- Dos repos nuevos al lado de este (aún sin GitHub ni commits): `../trading-dashboard-api` (NestJS 11) y `../trading-dashboard-web` (React 19 + Vite, gráficos con lightweight-charts). Este repo no cambió.
+- **Solo lectura**: la API abre cada sesión de Postgres con `default_transaction_read_only=on` y se recomienda el usuario `dashboard_ro` (`trading-dashboard-api/sql/usuario_solo_lectura.sql`). Redis con `XREAD` simple, **sin grupos de consumidores**: no le quita mensajes al risk-manager ni al monitoring.
+- Login de un usuario (hash bcrypt en el entorno, cookie httpOnly). Pantallas: gráfico con herramientas de dibujo y "lo que ve el modelo", hora por hora, operaciones y rendimiento (modelo / práctica / prueba y sim / MT5 siempre separados).
+- La traducción de factores a palabras está copiada de `_factor_text` (`daily_report.py`) en `trading-dashboard-web/src/lib/factors.ts`: si cambia allá, cambiarla allá también.
+- **Siguiente paso:** crear los repos en GitHub, ejecutar el SQL del usuario de solo lectura y desplegar ambos en Dokploy (instrucciones en cada README). Pendiente: calibración en vivo en el dashboard (portar `review.py`).
 
 - Medido el movimiento promedio por hora de Ecuador (H1, 2021-2026): las 05:00 es hora tranquila (EUR_USD 107, oro 86, con 100 = promedio); lo más movido es 07:00–10:00 y la apertura de Londres (02:00–03:00). Detalle en DIAGNOSTICO.md, sección 3.
 - Para medir las 5:00 sin tocar código: `REPORT_TIMES=01:30,05:00,08:00` en Dokploy (decide el usuario). La práctica de cada turno queda con su hora de apertura para compararla en febrero.
