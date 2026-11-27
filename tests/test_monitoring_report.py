@@ -120,6 +120,97 @@ def test_one_email_per_slot_through_real_redis_round_trip():
     assert [t.strftime("%H:%M") for t in sent] == ["06:30", "13:00"]
 
 
+class _Notifier:
+    def __init__(self):
+        self.msgs = []
+
+    def send_message(self, *args):
+        self.msgs.append(args[-1])
+        return True
+
+
+def _fake_bus():
+    fakeredis = pytest.importorskip("fakeredis")
+    from shared.bus import EventBus
+
+    bus = EventBus()
+    bus._client = fakeredis.FakeRedis(decode_responses=True)
+    return bus
+
+
+def _run_morning(bus, send, tg, mail, minutes=60):
+    """Un chequeo por minuto desde las 06:30 UTC (1:30 en Ecuador)."""
+    monitoring = _load_monitoring_main()
+    start = datetime(2026, 10, 27, 6, 30, tzinfo=UTC)
+    for minute in range(minutes):
+        monitoring._maybe_send_report(bus, None, tg, mail, now=start + timedelta(minutes=minute), send=send)
+
+
+def test_report_build_failure_is_retried_every_5_minutes():
+    bus, tg, mail, calls = _fake_bus(), _Notifier(), _Notifier(), []
+
+    def send(*args):
+        calls.append(args[-1].strftime("%H:%M"))
+        if len(calls) < 3:
+            raise RuntimeError("Dukascopy no responde")
+        return True
+
+    _run_morning(bus, send, tg, mail)
+    assert calls == ["06:30", "06:35", "06:40"]
+    assert tg.msgs == [] and mail.msgs == []  # al tercer intento salió: sin aviso
+
+
+def test_report_build_failure_warns_after_3_attempts():
+    bus, tg, mail, calls = _fake_bus(), _Notifier(), _Notifier(), []
+
+    def send(*args):
+        calls.append(args[-1])
+        raise RuntimeError("No hay velas de ningún par")
+
+    _run_morning(bus, send, tg, mail)
+    assert len(calls) == 3
+    assert len(tg.msgs) == 1 and "No se pudo generar el reporte de las 01:30" in tg.msgs[0]
+    assert len(mail.msgs) == 1 and "No hay velas" in mail.msgs[0]
+
+
+def test_email_failure_warns_by_telegram_without_resending_report():
+    bus, tg, mail, calls = _fake_bus(), _Notifier(), _Notifier(), []
+    _run_morning(bus, lambda *a: calls.append(1) or False, tg, mail)
+    assert len(calls) == 1  # no se repite: el Telegram y la práctica ya salieron
+    assert len(tg.msgs) == 1 and "no se pudo enviar" in tg.msgs[0]
+    assert mail.msgs == []  # el correo es lo que falla
+
+
+def test_old_state_format_counts_as_sent():
+    """Tras el redeploy, el estado viejo {"turno": ...} no debe reenviar el reporte."""
+    from shared.config import settings
+
+    bus, calls = _fake_bus(), []
+    bus.set_json(settings.key_daily_report_sent, {"turno": "2026-10-27 01:30"})
+    _run_morning(bus, lambda *a: calls.append(1) or True, _Notifier(), _Notifier())
+    assert calls == []
+
+
+def test_email_is_retried_with_growing_wait():
+    from daily_report import send_email_with_retry
+
+    class Mail:
+        def __init__(self, ok_at):
+            self.n, self.ok_at = 0, ok_at
+
+        def send_html(self, *a, **k):
+            self.n += 1
+            return self.n >= self.ok_at
+
+    waits = []
+    assert send_email_with_retry(Mail(3), "s", "h", "t", {}, sleep=waits.append)
+    assert waits == [30, 60]
+    waits.clear()
+    m = Mail(99)
+    assert not send_email_with_retry(m, "s", "h", "t", {}, sleep=waits.append)
+    assert m.n == 3 and waits == [30, 60]
+
+
 def _candles(n=600):
     df = generate_synthetic_forex_data(pair="EUR_USD", n_candles=n, granularity_minutes=60, seed=11)
     df.index = df.index.tz_localize("UTC") if df.index.tz is None else df.index

@@ -8,7 +8,7 @@ import signal
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
@@ -99,19 +99,66 @@ def is_redundant(channel: str, data: dict, position_open_before) -> bool:
     return False
 
 
+REPORT_ATTEMPTS = 3        # intentos de armar el reporte si falla antes de enviar nada
+REPORT_RETRY_MINUTES = 5   # espera entre esos intentos
+
+
+def _warn(notifier, email_notifier, text: str, by_email: bool) -> None:
+    """Aviso de que el reporte no salió. Por Telegram siempre; por correo solo si el correo no es lo que falla."""
+    log.error(text.replace("*", ""))
+    for send in ([notifier.send_message] if notifier else []) + (
+            [lambda t: email_notifier.send_message("⚠️ Reporte no enviado", t.replace("*", ""))]
+            if by_email and email_notifier else []):
+        try:
+            send(text)
+        except Exception:
+            log.exception("No se pudo enviar el aviso de reporte fallido")
+
+
 def _maybe_send_report(bus: EventBus, checker: HealthChecker, notifier, email_notifier,
                        now: Optional[datetime] = None, send=None) -> Optional[str]:
-    """Envía el reporte si toca un turno que no se envió. Devuelve el turno enviado."""
+    """
+    Envía el reporte si toca un turno que no se terminó. Devuelve el turno si se envió.
+
+    Estado en Redis: {"turno", "intentos", "listo", "siguiente"}. Se marca ANTES de
+    cada intento, así un fallo no se repite cada minuto: si el reporte falla al
+    armarse, se reintenta cada REPORT_RETRY_MINUTES hasta REPORT_ATTEMPTS veces y
+    luego se avisa. Si lo que falla es el correo, send_daily_report ya lo reintentó
+    y aquí solo se avisa por Telegram (repetir todo duplicaría el Telegram y la práctica).
+    """
     now = now or datetime.now(timezone.utc)
+    key = settings.key_daily_report_sent
     # Como objeto JSON: un string suelto no se puede leer con get_json (por eso se repetía el envío)
-    last = (bus.get_json(settings.key_daily_report_sent) or {})
-    slot = due_slot(now, last.get("turno") if isinstance(last, dict) else None, settings.report_times)
+    state = bus.get_json(key) or {}
+    state = state if isinstance(state, dict) else {}
+    done = bool(state.get("listo", True))  # estado anterior ({"turno": ...} solo) = terminado
+    slot = due_slot(now, state.get("turno") if done else None, settings.report_times)
     if slot is None:
         return None
-    # Se marca antes de enviar: si el envío falla no se reintenta cada minuto
-    bus.set_json(settings.key_daily_report_sent, {"turno": slot})
-    log.info(f"📧 Enviando reporte del turno {slot} (hora local)...")
-    (send or send_daily_report)(email_notifier, notifier, bus, checker, now)
+    tries = 0
+    if state.get("turno") == slot and not done:
+        tries = int(state.get("intentos", 0))
+        nxt = state.get("siguiente")
+        if nxt and now < datetime.fromisoformat(nxt):
+            return None
+    tries += 1
+    hora = slot.split(" ")[-1]
+    bus.set_json(key, {"turno": slot, "intentos": tries, "listo": tries >= REPORT_ATTEMPTS,
+                       "siguiente": (now + timedelta(minutes=REPORT_RETRY_MINUTES)).isoformat()})
+    log.info(f"📧 Enviando reporte del turno {slot} (hora local, intento {tries}/{REPORT_ATTEMPTS})...")
+    try:
+        sent = (send or send_daily_report)(email_notifier, notifier, bus, checker, now)
+    except Exception as e:
+        log.exception(f"Error generando el reporte del turno {slot}")
+        if tries >= REPORT_ATTEMPTS:
+            _warn(notifier, email_notifier, f"⚠️ *No se pudo generar el reporte de las {hora}* tras {tries} "
+                  f"intentos: {e}. Revisa el log del contenedor (\"Error generando el reporte\").", by_email=True)
+        return None
+    bus.set_json(key, {"turno": slot, "intentos": tries, "listo": True})
+    if sent is False:
+        _warn(notifier, email_notifier, f"⚠️ *El correo del reporte de las {hora} no se pudo enviar* (3 intentos). "
+              "El reporte sí salió por Telegram. Revisa en el log \"Error enviando correo\": suele ser la "
+              "contraseña de aplicación de Gmail o EMAIL\\_RECIPIENT.", by_email=False)
     return slot
 
 

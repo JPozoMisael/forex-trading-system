@@ -19,6 +19,7 @@ import io
 import math
 import os
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1011,11 +1012,32 @@ def collect(bus, checker, now: Optional[datetime] = None, review: bool = False) 
     return out
 
 
+EMAIL_ATTEMPTS = 3       # intentos de enviar el correo del reporte
+EMAIL_RETRY_WAIT_S = 30  # espera entre intentos: 30 s, luego 60 s
+
+
+def send_email_with_retry(email, subject: str, html: str, text: str, images: Dict[str, bytes],
+                          attempts: int = EMAIL_ATTEMPTS, wait_s: float = EMAIL_RETRY_WAIT_S, sleep=time.sleep) -> bool:
+    """Reintenta SOLO el correo (Gmail a veces rechaza un envío suelto); el resto del reporte no se repite."""
+    for i in range(1, attempts + 1):
+        if email.send_html(subject, html, text, images=images):
+            return True
+        if i < attempts:
+            log.warning(f"Correo del reporte no enviado (intento {i}/{attempts}); se reintenta en {wait_s * i:.0f} s")
+            sleep(wait_s * i)
+    log.error(f"Correo del reporte no enviado tras {attempts} intentos")
+    return False
+
+
 def send_daily_report(email, telegram, bus, checker, now: Optional[datetime] = None,
                       review: Optional[bool] = None, practice: bool = True) -> bool:
     """
     `review`: incluir el repaso de 24 h; None = según REPORT_REVIEW_TIMES (el turno de ahora).
     `practice`: abrir la operación de práctica del turno (si ENABLE_PRACTICE_TRADES y DRY_RUN).
+
+    Devuelve si salió el correo. Solo lanza excepción si falla ANTES de enviar nada
+    (armar el reporte), así quien llama puede reintentarlo completo sin duplicar el
+    Telegram ni la operación de práctica.
     """
     from econ_calendar import calendar_for_report
     from news_digest import digest_enabled, news_for_report
@@ -1031,11 +1053,17 @@ def send_daily_report(email, telegram, bus, checker, now: Optional[datetime] = N
     news = news_for_report([d.pair for d in datas], datas[0].now) if news_on else None
     subject, html, text = build_report(datas, events, practice=chosen, practice_on=practice_on, news=news,
                                        news_on=news_on)
-    sent = email.send_html(subject, html, text, images=images)
-    telegram.send_message(text.replace("_", "/"))  # "_" rompe el Markdown de Telegram
+    sent = send_email_with_retry(email, subject, html, text, images)
+    try:
+        telegram.send_message(text.replace("_", "/"))  # "_" rompe el Markdown de Telegram
+    except Exception:
+        log.exception("No se pudo enviar el reporte por Telegram")
     if chosen is not None:
         # Después del reporte: los correos de señal y de orden llegan justo detrás
-        publish_practice(bus, chosen, datas[0].now)
+        try:
+            publish_practice(bus, chosen, datas[0].now)
+        except Exception:
+            log.exception("No se pudo publicar la operación de práctica del turno")
     return sent
 
 

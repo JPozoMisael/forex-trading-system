@@ -4,7 +4,7 @@
 > `python scripts/diagnostico.py --guardar` y queda en [diagnosticos/](diagnosticos/).
 > Actualizar este archivo cada vez que se cierre o aparezca un pendiente.
 
-**Última revisión:** 2026-11-25 · 236 tests pasan.
+**Última revisión:** 2026-11-26 · 241 tests pasan.
 
 ## 1. Qué funciona hoy
 
@@ -22,6 +22,7 @@
 | Operación de práctica en cada reporte (la de mayor probabilidad aunque no llegue al 50 %, contada aparte), historial de operaciones cerradas con confianza y lote, desafío $20 → $300 (solo cálculo), correo de orden en palabras ("ABIERTA") y `scripts/operaciones.py` para ver las operaciones de la BD | ✅ | `practice.py`, `challenge.py`, `email_alerts.py`, `scripts/operaciones.py` |
 | Correo de señal con "POR QUÉ" (datos que más pesaron), tendencia en diario / 4 horas / 1 hora y cuántas están a favor (solo contexto: el modelo no la usa), y gráfico de soportes, resistencias, techo/piso de 24 h y anatomía de la última vela | ✅ | `email_alerts.py`, `signal_chart.py` |
 | "Lo que está moviendo el mundo": Claude resume los titulares de 24 h | ✅ código · ⏳ falta `ANTHROPIC_API_KEY` en Dokploy | `news_digest.py` |
+| Reintento del reporte: si falla al armarse se reintenta cada 5 min (3 veces); si falla el correo, se reintenta solo el correo (30 s y 60 s) sin duplicar el Telegram ni la práctica. Si no sale, aviso por Telegram (y por correo si el correo funciona) | ✅ | `main.py` (`_maybe_send_report`), `daily_report.py` (`send_email_with_retry`) |
 | Dashboard Grafana | ✅ básico | `infra/grafana/dashboards/trading_overview.json` |
 | Despliegue de los 5 servicios en un solo contenedor (Dokploy) | ✅ | `Dockerfile` raíz + `scripts/run_all.py` |
 | Backtester con costes por instrumento y validación walk-forward + permutación + bootstrap; prueba final pre-registrada por instrumento | ✅ | `backtesting/src/` (`validation.py`, `run_instrumentos.py`) |
