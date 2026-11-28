@@ -3,6 +3,7 @@ Cliente de notificaciones por correo (SMTP, ej. Gmail con "contraseña de aplica
 Espejo de telegram_alerts.py: mismos eventos, mismo criterio de qué informar,
 pero como email en texto plano para quien prefiera revisar su bandeja de entrada.
 """
+import re
 import smtplib
 from datetime import datetime, timezone
 from email.mime.image import MIMEImage
@@ -17,6 +18,24 @@ from shared.timefmt import fmt_local, zona
 log = get_logger(__name__)
 
 
+def parse_recipients(raw: str) -> List[str]:
+    """
+    Direcciones de EMAIL_RECIPIENT. Separadas por coma, punto y coma, espacios o
+    saltos de línea; sin comillas ni <>. Así un formato distinto a "a, b" no se
+    convierte en una sola dirección inválida que hace fallar todos los correos.
+    """
+    parts = re.split(r"[,;\s]+", raw.replace('"', " ").replace("'", " ").replace("<", " ").replace(">", " "))
+    out: List[str] = []
+    for p in parts:
+        if not p:
+            continue
+        if "@" not in p:
+            log.warning(f"EMAIL_RECIPIENT: se ignora '{p}' (no parece una dirección de correo)")
+        elif p.lower() not in (o.lower() for o in out):
+            out.append(p)
+    return out
+
+
 class EmailNotifier:
     def __init__(
         self,
@@ -26,9 +45,9 @@ class EmailNotifier:
     ):
         self.sender = sender or settings.email_sender
         self.app_password = app_password or settings.email_app_password
-        # Uno o varios destinatarios separados por coma: "a@x.com, b@y.com"
+        # Uno o varios destinatarios: "a@x.com, b@y.com" (también vale ";", espacios, saltos de línea o comillas)
         raw = recipient or settings.email_recipient or self.sender or ""
-        self.recipients = [r.strip() for r in raw.split(",") if r.strip()]
+        self.recipients = parse_recipients(raw)
         self.recipient = ", ".join(self.recipients)
         self.smtp_host = settings.email_smtp_host
         self.smtp_port = settings.email_smtp_port

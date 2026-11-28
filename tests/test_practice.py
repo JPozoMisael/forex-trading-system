@@ -222,3 +222,12 @@ def test_email_accepts_several_recipients(monkeypatch):
     assert sent["to"] == ["a@x.com", "b@y.com"] and "To: a@x.com, b@y.com" in sent["msg"]
     assert n.send_html("Hola", "<p>x</p>", "x")
     assert sent["to"] == ["a@x.com", "b@y.com"]
+
+
+def test_email_recipients_other_separators():
+    from email_alerts import parse_recipients
+
+    assert parse_recipients("a@x.com; b@y.com") == ["a@x.com", "b@y.com"]
+    assert parse_recipients('"a@x.com b@y.com"') == ["a@x.com", "b@y.com"]
+    assert parse_recipients("a@x.com\nb@y.com\n<A@x.com>") == ["a@x.com", "b@y.com"]
+    assert parse_recipients("a@x.com, nada") == ["a@x.com"]
